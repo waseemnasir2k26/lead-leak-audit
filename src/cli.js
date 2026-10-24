@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { openFile } from "./open.js";
 import { parseArgs } from "node:util";
 import { createRequire } from "node:module";
 import {
@@ -92,16 +92,6 @@ function num(v, name, def, { min = 0, max = Infinity } = {}) {
   if (!Number.isFinite(n) || n < min || n > max)
     throw new Error(`--${name} must be a number between ${min} and ${max}`);
   return n;
-}
-
-/** Open a file with the OS default app. Best effort, never throws. */
-function openFile(file) {
-  try {
-    const cmd = process.platform === "win32" ? ["cmd", ["/c", "start", '""', file]] : process.platform === "darwin" ? ["open", [file]] : ["xdg-open", [file]];
-    spawn(cmd[0], cmd[1], { detached: true, stdio: "ignore", shell: false, windowsVerbatimArguments: process.platform === "win32" }).unref();
-  } catch {
-    /* ignore: the path is printed anyway */
-  }
 }
 
 export async function main(argv = process.argv.slice(2)) {

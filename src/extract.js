@@ -55,8 +55,9 @@ export function extractPage(opts) {
 
   const forms = Array.from(document.querySelectorAll("form")).map(
     (form, formIndex) => {
-      const controls = Array.from(
-        form.querySelectorAll("input, select, textarea"),
+      // form.elements includes controls associated through form="id" that sit outside the <form> tag.
+      const controls = Array.from(form.elements).filter((e) =>
+        /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName),
       );
       const fields = controls.map((el, i) => {
         const tag = el.tagName.toLowerCase();
@@ -156,6 +157,27 @@ export function extractPage(opts) {
                 }
               })(),
         hasOnsubmit: !!form.getAttribute("onsubmit"),
+        // Every control that can submit this form, with its own formaction/formmethod override.
+        submitActions: Array.from(form.elements)
+          .filter((e) => {
+            const t = (e.getAttribute("type") || "").toLowerCase();
+            return (
+              (e.tagName === "BUTTON" && t !== "button" && t !== "reset") ||
+              (e.tagName === "INPUT" && (t === "submit" || t === "image"))
+            );
+          })
+          .map((e) => {
+            const fa = e.getAttribute("formaction");
+            let abs = null;
+            if (fa !== null) {
+              try {
+                abs = new URL(fa, location.href).href;
+              } catch (err) {
+                abs = "";
+              }
+            }
+            return { action: abs, method: (e.getAttribute("formmethod") || "").toLowerCase() };
+          }),
         visible: isVisible(form),
         fields,
         submit,

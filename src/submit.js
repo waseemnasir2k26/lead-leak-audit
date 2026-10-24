@@ -12,6 +12,7 @@ import {
   formSignature,
 } from "./rules.js";
 import { VERSION } from "./scan.js";
+import { forbiddenEndpoint } from "./guard.js";
 
 export const HARD_MAX_FORMS = 10;
 export const TEST_NAME = "LEAD-LEAK-AUDIT TEST";
@@ -237,6 +238,7 @@ export function newLines(before, after) {
 export function classifyOutcome({
   relevant = [],
   blockedForeign = [],
+  blockedForbidden = [],
   validationBlocked = false,
   startUrl,
   finalUrl,
@@ -252,6 +254,14 @@ export function classifyOutcome({
         `${r.method} ${safePath(r.url)} -> ${r.failed ? "FAILED " + (r.error || "") : r.status}`,
     )
     .join(" | ");
+  if (blockedForbidden.length) {
+    const paths = [...new Set(blockedForbidden)].slice(0, 3).join(", ");
+    return {
+      status: "skipped",
+      detail: `blocked: forbidden endpoint ${paths}. While submitting, the form (or a script on the page) tried to reach an endpoint this tool never touches (comments, cart, checkout, orders, payments, account, unsubscribe, delete, login, or a path robots.txt disallows). The request was aborted in the browser, so this form counts as not submitted.`,
+      evidence,
+    };
+  }
   if (!relevant.length && blockedForeign.length) {
     return {
       status: "skipped",
@@ -414,6 +424,11 @@ export function planSubmissions(inventory, { email, allowed, maxForms = HARD_MAX
     let pageUrl = null;
     try { pageUrl = new URL(f.firstPage); } catch { /* handled below */ }
     if (robots && pageUrl && !robots.isAllowed(pageUrl.pathname + pageUrl.search)) { skip('robots.txt disallows this page, so it is not visited or submitted'); continue; }
+    const badUrl = [f.actionAbs, ...(f.submitActions || []).map((x) => x.action)]
+      .filter(Boolean)
+      .map((u) => forbiddenEndpoint(u, { robots, allowSignup: includeNewsletter && f.kind === "newsletter" }))
+      .find(Boolean);
+    if (badUrl) { skip(`blocked: forbidden endpoint ${badUrl.path} (${badUrl.why})`); continue; }
     if (used >= cap) { skip(`Over the ${cap}-form cap for one run; run again to test the rest.`); continue; }
     if (f.captcha.present) { results.push({ ...base, status: 'blocked-captcha', captcha: f.captcha.kind, reason: 'Blocked by CAPTCHA, test manually.' }); continue; }
     let actionHost = '';
@@ -438,7 +453,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function runSubmissions(
   browser,
   planned,
-  { allowed, settleMs = 1500, waitMs = 10000, log = () => {} },
+  { allowed, settleMs = 1500, waitMs = 10000, log = () => {}, robots = null, allowSignupForNewsletter = false },
 ) {
   const out = [];
   for (const item of planned) {
@@ -453,6 +468,8 @@ export async function runSubmissions(
       userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36 lead-leak-audit/${VERSION}`,
     });
     const blockedForeign = [];
+    const blockedForbidden = [];
+    let armed = false;
     await ctx.route("**/*", (route) => {
       const req = route.request();
       let u;
@@ -469,6 +486,17 @@ export async function runSubmissions(
       ) {
         blockedForeign.push(u.host);
         return route.abort("blockedbyclient");
+      }
+      // Endpoint gate: judge what the request would DO by its real URL, whatever the DOM claimed.
+      // Non-GET requests are always judged; navigations and fetch/XHR GETs once the submit is armed.
+      const rt = req.resourceType();
+      const judged = !safeMethod || (armed && (req.isNavigationRequest() || rt === "fetch" || rt === "xhr"));
+      if (judged && /^https?:$/.test(u.protocol)) {
+        const hit = forbiddenEndpoint(req.url(), { robots, allowSignup: item.kind === "newsletter" && allowSignupForNewsletter });
+        if (hit) {
+          blockedForbidden.push(hit.path);
+          return route.abort("blockedbyclient");
+        }
       }
       return route.continue();
     });
@@ -512,7 +540,6 @@ export async function runSubmissions(
         rec.error = r.failure()?.errorText || "failed";
       }
     });
-    let armed = false;
     const record = { ...strip(item), submittedAt: null };
     try {
       await page.goto(item.page, {
@@ -557,10 +584,14 @@ export async function runSubmissions(
       }
       formMethod = live.method;
       const formLoc = page.locator("form").nth(idx);
-      const fieldLoc = formLoc.locator("input, select, textarea");
+      // form.elements also covers controls attached through form="id" outside the <form> tag.
+      const controls = await formLoc.evaluateHandle((f) =>
+        Array.from(f.elements).filter((e) => /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName)),
+      );
       for (const p of item.plan) {
         try {
-          const el = fieldLoc.nth(p.i);
+          const el = (await controls.getProperty(String(p.i))).asElement();
+          if (!el) throw new Error("field not found");
           if (p.action === "fill") await el.fill(p.value, { timeout: 4000 });
           else if (p.action === "select")
             await el.selectOption(p.value, { timeout: 4000 });
@@ -631,6 +662,7 @@ export async function runSubmissions(
       const verdict = classifyOutcome({
         relevant,
         blockedForeign,
+        blockedForbidden,
         validationBlocked,
         startUrl,
         finalUrl: page.url(),

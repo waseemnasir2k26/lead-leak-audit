@@ -1,3 +1,4 @@
+import { forbiddenEndpoint } from './guard.js';
 // Pure detectors and validators. No browser, no network: everything here is unit-tested.
 
 export const E164 = /^\+[1-9]\d{6,14}$/;
@@ -197,7 +198,8 @@ export const BOOKING_VENDORS = [
   { vendor: "Cal.com", re: /^https?:\/\/(?:app\.|www\.)?cal\.com\//i },
   {
     vendor: "GoHighLevel",
-    re: /^https?:\/\/[^/]*(?:leadconnectorhq\.com|msgsndr\.com|gohighlevel\.com)\/.*(?:booking|appointment|calendar)|^https?:\/\/[^/]+\/widget\/(?:booking|bookings)\//i,
+    // Known GHL / LeadConnector hosts only. A white-labelled /widget/booking/ path counts only on the scanned site's own host (see bookingVendor).
+    re: /^https?:\/\/(?:[^/]+\.)?(?:leadconnectorhq\.com|msgsndr\.com|gohighlevel\.com)\/.*(?:booking|appointment|calendar)/i,
   },
   {
     vendor: "Acuity",
@@ -210,8 +212,16 @@ export const BOOKING_VENDORS = [
   { vendor: "Setmore", re: /^https?:\/\/(?:[^/]+\.)?setmore\.com\//i },
 ];
 
-export function bookingVendor(href) {
+export function bookingVendor(href, { ownHost = null } = {}) {
   for (const b of BOOKING_VENDORS) if (b.re.test(href)) return b.vendor;
+  if (ownHost) {
+    try {
+      const u = new URL(href);
+      if (hostKey(u.host) === hostKey(ownHost) && /^\/widget\/bookings?\//i.test(u.pathname)) return "GoHighLevel";
+    } catch {
+      /* not a URL */
+    }
+  }
   return null;
 }
 
@@ -382,7 +392,8 @@ const CARD_FIELD_RE = /card[-_]?number|cc[-_]?(?:num|number|exp|csc)|cvv|cvc|car
 const QTY_RE = /^(?:quantity|qty|amount|add[-_]?to[-_]?cart)$/i;
 
 function formHaystack(form) {
-  return `${form.actionAbs || ''} ${form.id || ''} ${form.name || ''} ${form.className || ''}`;
+  const submitters = (form.submitActions || []).map((x) => x.action || '').join(' ');
+  return `${form.actionAbs || ''} ${submitters} ${form.id || ''} ${form.name || ''} ${form.className || ''}`;
 }
 
 /**
@@ -392,8 +403,14 @@ function formHaystack(form) {
 export function forbiddenForm(form) {
   const f = form.fields || [];
   const hay = formHaystack(form);
-  const names = f.map((x) => `${x.name || ''} ${x.id || ''}`).join(' ');
   if (f.some((x) => x.type === 'password')) return { kind: 'login', why: 'login or account form (password field)' };
+  // Defence in depth: judge every URL this form can submit to (form action AND each submit button's formaction).
+  for (const url of [form.actionAbs, ...(form.submitActions || []).map((x) => x.action)]) {
+    if (!url) continue;
+    const hit = forbiddenEndpoint(url);
+    if (hit && hit.kind !== 'robots') return { kind: hit.kind, why: `blocked: forbidden endpoint ${hit.path} (${hit.why})` };
+  }
+  const names = f.map((x) => `${x.name || ''} ${x.id || ''}`).join(' ');
   if (COMMENT_RE.test(hay) || /comment_post_id|comment_parent/i.test(names)) return { kind: 'comment', why: 'comment form: submitting would publish a public comment' };
   if (f.some((x) => x.type === 'file')) return { kind: 'file-upload', why: 'file upload form: never submitted' };
   if (COMMERCE_RE.test(hay) || /add-to-cart|product_id|variation_id|wc-ajax/i.test(names) || f.some((x) => CARD_FIELD_RE.test(`${x.name} ${x.id} ${x.autocomplete}`) || /^cc-/i.test(x.autocomplete || ''))) {
@@ -440,11 +457,12 @@ export function leadEligibility(form) {
 /** Stable signature so the same footer form on 15 pages counts as one form. */
 export function formSignature(form) {
   const names = (form.fields || [])
-    .filter((x) => x.type !== "hidden" && x.type !== "submit")
+    .filter((x) => x.type !== "submit")
     .map((x) => `${x.tag}:${x.type}:${x.name || x.id || ""}`)
     .sort()
     .join("|");
-  return `${(form.method || "get").toLowerCase()} ${form.actionAbs || ""} ${names}`;
+  const submitters = (form.submitActions || []).map((x) => x.action || "").join(",");
+  return `${(form.method || "get").toLowerCase()} ${form.actionAbs || ""} ${form.id || ""} ${submitters} ${names}`;
 }
 
 /** Host comparison key: lowercase, no leading www., default ports dropped, other ports kept. */

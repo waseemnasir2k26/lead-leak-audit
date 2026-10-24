@@ -38,7 +38,7 @@ export function classifyConsole(msg) {
 /**
  * @param {Array} pages [{url,status,extract,consoleMessages:[{kind,text}],failedRequests:[{url,status}]}]
  */
-export function buildInventory(pages) {
+export function buildInventory(pages, { ownHost = null } = {}) {
   const forms = new Map();
   const mailto = new Map();
   const tel = new Map();
@@ -96,6 +96,7 @@ export function buildInventory(pages) {
           actionAttr: f.actionAttr,
           actionAbs: f.actionAbs,
           hasOnsubmit: f.hasOnsubmit,
+          submitActions: f.submitActions || [],
           fields,
           submit: f.submit,
           captcha,
@@ -149,7 +150,7 @@ export function buildInventory(pages) {
           p.url,
         );
       } else if (/^https?:/i.test(href)) {
-        const vendor = bookingVendor(href);
+        const vendor = bookingVendor(href, { ownHost });
         if (vendor)
           addPage(
             booking,
@@ -160,7 +161,7 @@ export function buildInventory(pages) {
       }
     }
     for (const f of x.iframes) {
-      const vendor = bookingVendor(f);
+      const vendor = bookingVendor(f, { ownHost });
       if (vendor)
         addPage(
           booking,

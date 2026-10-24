@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2 - 2026-10-25
+
+Safety release. Upgrade if you used `submit`.
+
+- **Network-layer gate.** The DOM classification is no longer the only defence. Inside the browser, every outgoing non-GET request, and every navigation or fetch/XHR once a submit is armed, is judged by its real URL: host allow-list, `robots.txt`, and a never-touch list (comments, cart, add-to-cart, checkout, orders, payments, unsubscribe, delete, account, register, password, login, reset, sign-up). Forbidden requests are aborted, reported as "blocked: forbidden endpoint <path>", and the form counts as not submitted. This also covers a submit button's `formaction`, a `formaction` set by script at click time, and `fetch()` calls from a submit handler.
+- The DOM classifier now also reads every submit control's `formaction`/`formmethod` and controls attached with `form="id"` from outside the `<form>` tag. Form de-duplication now takes the form id, submit targets and hidden field names into account, so look-alike forms are no longer merged.
+- Private-address guard rewritten: IPv4 in decimal/octal/hex/short forms, IPv6 expanded and checked (IPv4-mapped `::ffff:7f00:1`, IPv4-compatible `::7f00:1`, NAT64, 6to4, ULA `fc00::/7`, link-local `fe80::/10`, multicast, Teredo), plus 0.0.0.0/8, 100.64/10 and other reserved ranges. Link checks connect through a lookup that validates the resolved address and connects to that same address, so DNS rebinding cannot swap in a private IP. Redirect hops are checked too.
+- GoHighLevel booking detection accepts only known GHL/LeadConnector hosts, or a `/widget/booking/` path on the scanned site's own host.
+- `--open` on Windows uses `explorer.exe` with an argument array instead of `cmd /c start`, so paths containing `&` and other shell characters are safe.
+
 ## 1.0.1 - 2026-10-25
 
 Safety release. Upgrade if you used `submit`.

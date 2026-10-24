@@ -81,6 +81,8 @@ export async function runSubmit(url, opts = {}) {
       allowed,
       settleMs: opts.settleMs ? Math.min(opts.settleMs, 2000) : 1500,
       log,
+      robots,
+      allowSignupForNewsletter: includeNewsletter,
     });
     let replies = [];
     const waiting = submissions.filter(

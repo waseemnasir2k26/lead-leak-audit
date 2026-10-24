@@ -12,7 +12,7 @@ const TYPES = {
   ".js": "text/javascript; charset=utf-8",
 };
 
-const STATE_CHANGING = ["/wp-comments-post.php", "/cart/add", "/unsubscribe", "/subscribe", "/api/upload", "/account/delete"];
+const STATE_CHANGING = ["/wp-comments-post.php", "/cart/add", "/unsubscribe", "/subscribe", "/api/upload", "/account/delete", "/private/collect"];
 
 const CRISP_STUB =
   "(function(){var d=document.createElement('div');d.className='crisp-client';d.style.cssText='position:fixed;right:12px;bottom:12px;width:56px;height:56px;border-radius:50%;background:#1972f5';(document.body||document.documentElement).appendChild(d)})();";

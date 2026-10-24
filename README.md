@@ -87,6 +87,7 @@ Requires Node 20+. `imapflow` is an optional dependency, only used by `--imap`.
 - WhatsApp is never contacted by design: links are validated and fetched, nothing more.
 - IMAP details come from env vars only (never CLI arguments), are never logged, and are redacted from every report. The test inbox address is masked in the report.
 - Both `scan` and `submit` honour `robots.txt` for the pages they visit. Form actions are only probed on the scanned host; WhatsApp and booking links are never fetched at private, loopback or link-local addresses (unless the scanned site itself is on one).
+- Every request a submit triggers is also judged by its real URL inside the browser, whatever the form markup says (a button's `formaction`, script-set actions and `fetch()` calls included). Comment, cart, checkout, order, payment, account, unsubscribe, login and robots-disallowed paths are aborted and reported as "blocked: forbidden endpoint".
 - Any cross-origin navigation or non-GET request that a form triggers (including one created by page JavaScript) is aborted in the browser and reported as "blocked: foreign host".
 
 Exit codes: `0` ok, `1` error, `2` CI check failed, `3` refused by a safety rail.

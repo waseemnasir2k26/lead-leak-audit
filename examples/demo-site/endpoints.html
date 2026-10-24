@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Looks like contact forms, behaves differently</title>
+    <style>
+      body {
+        font: 16px system-ui;
+        padding: 16px;
+        max-width: 640px;
+      }
+      input,
+      textarea {
+        display: block;
+        width: 100%;
+        margin: 6px 0;
+        padding: 8px;
+        font: inherit;
+      }
+      form {
+        border: 1px solid #ddd;
+        padding: 8px;
+        margin: 12px 0;
+      }
+      button {
+        padding: 12px 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Forms whose real destination differs from what they look like</h1>
+    <p>
+      Every form here looks like an ordinary enquiry form. None of them may
+      reach a forbidden endpoint.
+    </p>
+
+    <form id="fa-comment" action="/api/lead" method="post">
+      <input name="name" placeholder="Name" /><input
+        type="email"
+        name="email"
+        placeholder="Email"
+      /><textarea name="message" placeholder="Message"></textarea
+      ><button type="submit" formaction="/wp-comments-post.php">Send</button>
+    </form>
+
+    <form id="fa-cart" action="/api/lead" method="post">
+      <input name="name" placeholder="Name" /><input
+        type="email"
+        name="email"
+        placeholder="Email"
+      /><textarea name="message" placeholder="Message"></textarea
+      ><button type="submit">Send</button
+      ><button type="submit" formaction="/cart/add" formmethod="post">
+        Add
+      </button>
+    </form>
+
+    <form id="fa-unsub" action="/api/lead" method="post">
+      <input name="name" placeholder="Name" /><input
+        type="email"
+        name="email"
+        placeholder="Email"
+      /><textarea name="message" placeholder="Message"></textarea
+      ><input type="submit" value="Send" formaction="/unsubscribe" />
+    </form>
+
+    <form id="fa-robots" action="/api/lead" method="post">
+      <input name="name" placeholder="Name" /><input
+        type="email"
+        name="email"
+        placeholder="Email"
+      /><textarea name="message" placeholder="Message"></textarea
+      ><button type="submit" formaction="/private/collect">Send</button>
+    </form>
+
+    <!-- fields attached through form="id" from outside the form tag: a password field and a comment id -->
+    <form id="assoc-login" action="/api/lead" method="post">
+      <button type="submit">Send</button>
+    </form>
+    <input name="name" form="assoc-login" placeholder="Name" /><input
+      type="email"
+      name="email"
+      form="assoc-login"
+      placeholder="Email"
+    /><textarea
+      name="message"
+      form="assoc-login"
+      placeholder="Message"
+    ></textarea
+    ><input
+      type="password"
+      name="pw"
+      form="assoc-login"
+      placeholder="Password"
+    />
+
+    <form id="assoc-comment" action="/api/lead" method="post">
+      <input name="name" placeholder="Name" /><input
+        type="email"
+        name="email"
+        placeholder="Email"
+      /><textarea name="message" placeholder="Message"></textarea
+      ><button type="submit">Send</button>
+    </form>
+    <input
+      type="hidden"
+      name="comment_post_ID"
+      value="7"
+      form="assoc-comment"
+    />
+
+    <!-- formaction injected by script at click time: invisible to any DOM classifier, caught only at the network layer -->
+    <form id="js-formaction" action="/api/lead" method="post">
+      <input name="name" placeholder="Name" /><input
+        type="email"
+        name="email"
+        placeholder="Email"
+      /><textarea name="message" placeholder="Message"></textarea
+      ><button
+        type="submit"
+        style="min-height: 48px"
+        onclick="this.setAttribute('formaction', '/wp-comments-post.php')"
+      >
+        Send
+      </button>
+    </form>
+
+    <!-- the page's own script posts somewhere forbidden from the submit handler -->
+    <form
+      id="js-fetch"
+      action="/api/lead"
+      method="post"
+      onsubmit="
+        fetch('/wp-comments-post.php', { method: 'POST', body: 'x' });
+        fetch('/cart/add?add-to-cart=1', { method: 'POST' });
+        fetch('/unsubscribe', { method: 'POST' });
+        fetch('/private/collect', { method: 'POST' });
+        return false;
+      "
+    >
+      <input name="name" placeholder="Name" /><input
+        type="email"
+        name="email"
+        placeholder="Email"
+      /><textarea name="message" placeholder="Message"></textarea
+      ><button type="submit" style="min-height: 48px">Send</button>
+    </form>
+  </body>
+</html>

@@ -46,7 +46,7 @@ test("dry run: comment, cart, unsubscribe, delete, upload and newsletter forms a
   );
   const kinds = risky.map((p) => p.kind).sort();
   assert.deepEqual(kinds, ['account', 'account', 'comment', 'commerce', 'file-upload', 'newsletter']);
-  assert.ok(risky.some((p) => /comment form/.test(p.reason)));
+  assert.ok(risky.some((p) => /comment/.test(p.reason)));
   assert.ok(risky.some((p) => /cart/.test(p.reason)));
   assert.ok(risky.some((p) => /--include-newsletter/.test(p.reason)));
   assert.ok(extra.plan.some((p) => p.status === "would-submit"));
@@ -116,4 +116,25 @@ test("foreign host guard: JS-changed action, cross-origin GET form and JS-change
     3,
   );
   assert.deepEqual(foreignRequests, []);
+});
+
+test('endpoint gate: formaction, form= association, script-set formaction and fetch() never reach forbidden paths', async () => {
+  site.hits.length = 0;
+  const leadsBefore = site.leads.length;
+  const mark = site.requests.length;
+  const { extra } = await runSubmit(`${site.url}endpoints.html`, { ...FAST, maxPages: 1 });
+  const run = site.requests.slice(mark);
+  const forbidden = run.filter((r) => /(wp-comments-post|\/cart|unsubscribe|private\/collect|\/account|\/subscribe)/.test(r));
+  assert.deepEqual(forbidden, [], `forbidden paths were requested: ${forbidden}`);
+  assert.deepEqual(site.hits, []);
+  assert.equal(site.leads.length, leadsBefore, 'no lead was posted by any of these forms');
+
+  const subs = extra.submissions.filter((s) => s.page.endsWith('/endpoints.html'));
+  assert.equal(subs.length, 8);
+  assert.ok(subs.every((s) => s.status === 'skipped'), JSON.stringify(subs.map((s) => [s.status, s.reason || s.detail])));
+  // 6 are refused at plan time (formaction x4, login via form=, comment via form=); 2 only show at the network layer
+  const attempted = subs.filter((s) => s.submittedAt);
+  assert.equal(attempted.length, 2, 'script-set formaction and fetch() forms were actually clicked');
+  for (const s of attempted) assert.match(s.detail, /^blocked: forbidden endpoint/);
+  for (const s of subs.filter((x) => !x.submittedAt)) assert.match(s.reason, /blocked: forbidden endpoint|login|comment/);
 });
