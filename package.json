@@ -1,0 +1,56 @@
+{
+  "name": "lead-leak-audit",
+  "version": "1.0.0",
+  "description": "Free local CLI that audits your own website's lead path (forms, auto-replies, WhatsApp links, chat widgets, booking links) and scores where leads die.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "lead-leak-audit": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "demo": "node examples/demo.js",
+    "demo:sample": "node examples/demo.js --sample"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "lead-generation",
+    "contact-form",
+    "form-testing",
+    "website-audit",
+    "playwright",
+    "whatsapp",
+    "chat-widget",
+    "speed-to-lead",
+    "conversion",
+    "n8n",
+    "cli",
+    "qa"
+  ],
+  "author": "Waseem Nasir <info@skynetjoe.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/waseemnasir2k26/lead-leak-audit.git"
+  },
+  "homepage": "https://github.com/waseemnasir2k26/lead-leak-audit#readme",
+  "bugs": {
+    "email": "info@skynetjoe.com"
+  },
+  "dependencies": {
+    "playwright": "^1.64.1"
+  },
+  "optionalDependencies": {
+    "imapflow": "^2.9.1"
+  }
+}

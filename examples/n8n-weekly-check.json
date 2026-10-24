@@ -1,0 +1,116 @@
+{
+  "name": "lead-leak-audit weekly check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [1],
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "5b3c2f10-1111-4a00-9a01-000000000001",
+      "name": "Every Monday 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "command": "cd /opt/lead-leak-audit && node src/cli.js scan https://your-site.example --ci --threshold 75 --baseline reports/baseline/report.json --out reports/latest --no-mx-check --quiet --json; [ -f reports/baseline/report.json ] || (mkdir -p reports/baseline && cp reports/latest/report.json reports/baseline/report.json)"
+      },
+      "id": "5b3c2f10-1111-4a00-9a01-000000000002",
+      "name": "Run lead-leak-audit",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [240, 0],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// The CLI prints one JSON line with --json. Take the last JSON line of stdout.\nconst out = String($json.stdout || '').trim().split('\\n').filter(Boolean);\nlet summary = null;\nfor (let i = out.length - 1; i >= 0; i--) {\n  try { summary = JSON.parse(out[i]); break; } catch (e) { /* not JSON */ }\n}\nif (!summary) {\n  return [{ json: { pass: false, score: null, reasons: ['The audit did not produce a result: ' + String($json.stderr || 'no output').slice(0, 300)] } }];\n}\nreturn [{ json: summary }];"
+      },
+      "id": "5b3c2f10-1111-4a00-9a01-000000000003",
+      "name": "Read result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.pass }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5b3c2f10-1111-4a00-9a01-000000000004",
+      "name": "Score dropped or below threshold?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [720, 0]
+    },
+    {
+      "parameters": {
+        "fromEmail": "alerts@your-site.example",
+        "toEmail": "you@your-site.example",
+        "subject": "=Lead leak check: score {{ $json.score }}/100 ({{ $json.grade }})",
+        "emailFormat": "text",
+        "text": "=The weekly lead leak check failed.\n\nScore: {{ $json.score }}/100 ({{ $json.grade }})\nWhy: {{ ($json.reasons || []).join('; ') }}\nCritical: {{ $json.bySeverity ? $json.bySeverity.critical : '?' }}  High: {{ $json.bySeverity ? $json.bySeverity.high : '?' }}\n\nFull report on the server: {{ $json.html }}\n\nThis check only reads your site. It never submits a form.",
+        "options": {}
+      },
+      "id": "5b3c2f10-1111-4a00-9a01-000000000005",
+      "name": "Email me",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [960, -80],
+      "credentials": {
+        "smtp": { "id": "REPLACE_ME", "name": "SMTP account" }
+      }
+    }
+  ],
+  "connections": {
+    "Every Monday 07:00": {
+      "main": [[{ "node": "Run lead-leak-audit", "type": "main", "index": 0 }]]
+    },
+    "Run lead-leak-audit": {
+      "main": [[{ "node": "Read result", "type": "main", "index": 0 }]]
+    },
+    "Read result": {
+      "main": [
+        [
+          {
+            "node": "Score dropped or below threshold?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score dropped or below threshold?": {
+      "main": [[{ "node": "Email me", "type": "main", "index": 0 }], []]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "active": false,
+  "tags": []
+}

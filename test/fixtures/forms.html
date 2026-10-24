@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Forms fixture</title>
+<style>.hp{position:absolute;left:-9999px}</style></head><body>
+<form id="contact" action="/api/lead" method="post">
+  <label for="n">Your name</label><input id="n" name="name" required>
+  <input type="email" name="email" required>
+  <textarea name="message"></textarea>
+  <input class="hp" name="website_url" tabindex="-1">
+  <button type="submit">Send</button>
+</form>
+<form role="search" action="/search"><input type="search" name="q"><button>Go</button></form>
+<form action="/login" method="post"><input name="user"><input type="password" name="pw"><button>Login</button></form>
+<form action="/subscribe" method="post"><input type="email" name="email"><button>Join</button></form>
+<form id="captcha" action="/api/lead" method="post"><input type="email" name="email"><textarea name="msg"></textarea><div class="g-recaptcha" data-sitekey="k"></div><button>Send</button></form>
+<form id="turnstile" action="/api/lead2" method="post"><input type="email" name="email"><textarea name="msg"></textarea><div class="cf-turnstile"></div><button>Send</button></form>
+</body></html>

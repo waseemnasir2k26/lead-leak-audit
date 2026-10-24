@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead leak report - http://127.0.0.1:4173/</title>
+<style>
+:root{--ink:#111827;--dim:#6b7280;--line:#e5e7eb;--bg:#f9fafb;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:920px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:32px 0 10px}h3{font-size:15px;margin:0}
+.dim{color:var(--dim)}code{font:12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f3f4f6;padding:1px 5px;border-radius:4px;word-break:break-all}
+.hero{display:flex;gap:24px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}
+.ring{width:132px;height:132px;border-radius:50%;background:conic-gradient(#b91c1c 82.8deg,#e5e7eb 0);display:grid;place-items:center;flex:none}
+.ring div{width:104px;height:104px;border-radius:50%;background:#fff;display:grid;place-items:center;text-align:center}
+.ring b{font-size:34px;line-height:1;display:block;color:#b91c1c}.ring span{font-size:12px;color:var(--dim)}
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.pill{border:1px solid var(--c);color:var(--c);border-radius:99px;padding:1px 10px;font-size:12px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:13.5px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{background:#f3f4f6;font-weight:600}
+td.num{text-align:right;width:48px}td.bar{width:38%}td.bar span{display:block;height:8px;border-radius:4px}.break{word-break:break-all}
+.leak{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:8px;padding:12px 14px;margin:10px 0;break-inside:avoid}
+.leak header{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.sev{font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;color:var(--c)}
+.leak p{margin:6px 0 0}.fix{background:#f0fdf4;border-radius:6px;padding:6px 10px}.where{font-size:12.5px;color:var(--dim)}
+.ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px}
+.st{font-size:12px;border-radius:4px;padding:1px 7px;background:#f3f4f6}
+.st-delivered,.st-great,.st-ok{background:#dcfce7;color:#166534}.st-failed,.st-no-request,.st-dead,.st-leak{background:#fee2e2;color:#991b1b}
+.st-unconfirmed,.st-error-message,.st-client-validation{background:#fef3c7;color:#92400e}.st-blocked-captcha,.st-skipped,.st-would-submit{background:#dbeafe;color:#1e40af}
+.scroll{overflow-x:auto}
+footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+footer a{color:#1d4ed8}
+@media print{body{background:#fff}main{padding:0}.leak,.hero,table{break-inside:avoid}a{color:inherit}}
+@media (max-width:520px){.ring{margin:0 auto}}
+</style>
+</head>
+<body>
+<main>
+<h1>Lead leak report</h1>
+<p class="dim"><code>http://127.0.0.1:4173/</code> · submit mode · 2026-10-24 09:37 UTC · 6 page(s) scanned</p>
+
+<section class="hero">
+  <div class="ring"><div><b>23</b><span>of 100</span></div></div>
+  <div style="flex:1;min-width:220px">
+    <h2 style="margin:0">Lead survival score: Critical</h2>
+    <p class="dim" style="margin:4px 0 0">100 minus penalties per leak (critical -25, high -15, medium -8, low -3). Each area loses at most 40 points. Notes cost nothing. </p>
+    <div class="pills"><span class="pill" style="--c:#b91c1c">critical 1</span><span class="pill" style="--c:#c2410c">high 2</span><span class="pill" style="--c:#b45309">medium 2</span><span class="pill" style="--c:#4b5563">low 2</span><span class="pill" style="--c:#1d4ed8">info 3</span></div>
+  </div>
+</section>
+
+<h2>Score breakdown</h2>
+<table><thead><tr><th>Area</th><th>Health</th><th class="num">Score</th><th class="num">Lost</th></tr></thead><tbody><tr><td>Contact forms</td><td class="bar"><span style="width:60%;background:#b91c1c"></span></td><td class="num">60</td><td class="num dim">-40</td></tr><tr><td>WhatsApp</td><td class="bar"><span style="width:82%;background:#b45309"></span></td><td class="num">82</td><td class="num dim">-18</td></tr><tr><td>Mobile experience</td><td class="bar"><span style="width:92%;background:#15803d"></span></td><td class="num">92</td><td class="num dim">-8</td></tr><tr><td>Chat widgets</td><td class="bar"><span style="width:92%;background:#15803d"></span></td><td class="num">92</td><td class="num dim">-8</td></tr><tr><td>Email and phone links</td><td class="bar"><span style="width:97%;background:#15803d"></span></td><td class="num">97</td><td class="num dim">-3</td></tr></tbody></table>
+
+<h2>Leaks and how to fix them</h2>
+<article class="leak" style="--c:#b91c1c">
+  <header><span class="sev">critical</span><h3>Form posts to an address that does not exist</h3></header>
+  <p>The contact form (fullname, email, details) sends leads to http://127.0.0.1:4173/api/missing, which returns HTTP 404. Every submission is lost.</p>
+  <p class="fix"><strong>Fix:</strong> Point the form action at a working handler (your form plugin, CRM webhook or serverless function) and re-test with the `submit` command.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/quote.html</code></p>
+  <p class="where">Evidence: <code>action=/api/missing method=post</code></p>
+</article>
+<article class="leak" style="--c:#c2410c">
+  <header><span class="sev">high</span><h3>Uncaught JavaScript error on a page with a form</h3></header>
+  <p>&quot;Cannot read properties of undefined (reading &#39;start&#39;)&quot;. A script crash can stop the form from submitting.</p>
+  <p class="fix"><strong>Fix:</strong> Open the page, check the browser console, and fix or remove the failing script. Re-test the form afterwards.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/quote.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#c2410c">
+  <header><span class="sev">high</span><h3>WhatsApp button points to a number that cannot work</h3></header>
+  <p>https://wa.me/+0123abc?text=Hello (non-numeric). WhatsApp expects digits only, with the country code and no leading zeros.</p>
+  <p class="fix"><strong>Fix:</strong> Use https://wa.me/&lt;countrycode&gt;&lt;number&gt; with digits only, for example https://wa.me/14155552671.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/whatsapp.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#b45309">
+  <header><span class="sev">medium</span><h3>Submit button is hard to tap on mobile</h3></header>
+  <p>It measures 60x24px. Aim for at least 44px high.</p>
+  <p class="fix"><strong>Fix:</strong> Increase the button height and padding.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/quote.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#b45309">
+  <header><span class="sev">medium</span><h3>Tidio chat widget is installed but never appears</h3></header>
+  <p>The Tidio script is on the page but no chat bubble or frame was found in the page after it loaded. It may be off by schedule, hidden by consent settings, or misconfigured.</p>
+  <p class="fix"><strong>Fix:</strong> Open the page on a phone and look for the Tidio bubble. If it is missing, check the widget ID, domain allow-list and business-hours settings in Tidio.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/chat.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#4b5563">
+  <header><span class="sev">low</span><h3>Phone link is not in international (E.164) format</h3></header>
+  <p>tel:(0800) 123 456 may fail when tapped from another country or from some messaging apps.</p>
+  <p class="fix"><strong>Fix:</strong> Write it as tel:+&lt;country code&gt;&lt;number&gt; with no spaces or brackets.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/</code></p>
+  
+</article>
+<article class="leak" style="--c:#4b5563">
+  <header><span class="sev">low</span><h3>WhatsApp link has no prefilled message</h3></header>
+  <p>https://wa.me/14155552671. A prefilled text such as &quot;Hi, I found you on your website&quot; makes the first message one tap and tells you where it came from.</p>
+  <p class="fix"><strong>Fix:</strong> Append ?text=Hi%2C%20I%20found%20you%20on%20your%20website.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/whatsapp.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>reCAPTCHA protects this form</h3></header>
+  <p>The audit never solves or bypasses CAPTCHAs, so this form cannot be tested automatically.</p>
+  <p class="fix"><strong>Fix:</strong> Test it by hand once a month. Aggressive CAPTCHA settings are a common reason real leads are rejected.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/captcha.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form contact (fullname/email/details): test submission confirmed the dead form address</h3></header>
+  <p>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</p>
+  <p class="fix"><strong>Fix:</strong> See the critical finding about the form address; no separate action needed.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/quote.html</code></p>
+  <p class="where">Evidence: <code>POST /api/missing -&gt; 404</code></p>
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form contact (email/message): blocked by CAPTCHA, test manually</h3></header>
+  <p>reCAPTCHA is present. The audit never solves or bypasses CAPTCHAs.</p>
+  <p class="fix"><strong>Fix:</strong> Submit this form by hand and confirm the lead arrives and the auto-reply fires.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/captcha.html</code></p>
+  
+</article>
+
+<h2>Test submissions</h2><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody><tr><td>contact (name/email/phone)</td><td><span class="st st-delivered">delivered</span></td><td>Accepted (HTTP 200) and the visitor saw a confirmation on /thanks.html.</td></tr><tr><td>contact (fullname/email/details)</td><td><span class="st st-failed">failed</span></td><td>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</td></tr><tr><td>contact (email/message)</td><td><span class="st st-blocked-captcha">blocked-captcha</span></td><td>Blocked by CAPTCHA, test manually.</td></tr></tbody></table></div>
+<p class="dim">Reply timing was not measured (no IMAP access configured).</p>
+
+<h2>What was found</h2>
+<div class="scroll"><table><thead><tr><th>Form</th><th>Sends to</th><th>Fields</th><th>CAPTCHA</th><th>Honeypot</th></tr></thead><tbody><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/lead</code></td><td>3 required</td><td>none</td><td>yes (1)</td></tr><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/missing</code></td><td>2 required</td><td>none</td><td>no</td></tr><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/lead</code></td><td>2 required</td><td>reCAPTCHA</td><td>no</td></tr></tbody></table></div>
+<br><div class="scroll"><table><thead><tr><th>Type</th><th>Target</th><th>Status</th></tr></thead><tbody><tr><td>email</td><td class="break"><code>mailto:hello@demo-plumbing.test</code></td><td>ok</td></tr><tr><td>phone</td><td class="break"><code>tel:+14155552671</code></td><td>ok (E.164)</td></tr><tr><td>phone</td><td class="break"><code>tel:(0800) 123 456</code></td><td>not-international</td></tr><tr><td>WhatsApp</td><td class="break"><code>https://wa.me/+0123abc?text=Hello</code></td><td>non-numeric, prefilled, not checked</td></tr><tr><td>WhatsApp</td><td class="break"><code>https://wa.me/14155552671</code></td><td>format ok, no prefill, not checked</td></tr><tr><td>chat</td><td class="break"><code>Crisp</code></td><td>rendered</td></tr><tr><td>chat</td><td class="break"><code>Tidio</code></td><td>not rendered</td></tr></tbody></table></div>
+
+<footer>
+<p>Report by lead-leak-audit (open source) · Want these leaks fixed? <a href="https://skynetjoe.com">https://skynetjoe.com</a></p>
+<p>Scans are read-only. Test submissions are only sent with explicit confirmation of ownership. Credentials are never stored in this report.</p>
+</footer>
+</main>
+</body>
+</html>
