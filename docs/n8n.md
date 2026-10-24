@@ -36,7 +36,7 @@ The Code node reads that last JSON line, so the workflow works even if the proce
 ## Notes
 
 - n8n 2.x disables the Execute Command node by default for security. Re-enable it only on a self-hosted instance you control (remove `n8n-nodes-base.executeCommand` from `NODES_EXCLUDE`).
-- Do not schedule `submit` unattended unless you understand that it sends a real test lead every run. If you do, point `--email` at a dedicated test inbox and keep the credentials in environment variables (`LLA_IMAP_*`), never in the workflow.
+- Do not schedule `submit` unattended unless you understand that it sends a real test lead every run. It refuses to run without a human unless you pass `--yes` together with `--only <form>`. If you do, point `--email` at a dedicated test inbox and keep the credentials in environment variables (`LLA_IMAP_*`), never in the workflow.
 - The workflow ships inactive and with a placeholder SMTP credential. The JSON was written by hand and has not been imported into a live n8n instance by the author; check the node versions against yours on import.
 - Cron alternative, no n8n needed:
 

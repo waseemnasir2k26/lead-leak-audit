@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openFile } from "./open.js";
+import { askYesNo, formatPlan } from "./confirm.js";
 import { parseArgs } from "node:util";
 import { createRequire } from "node:module";
 import {
@@ -42,6 +43,9 @@ Submit (sends ONE clearly marked test lead per distinct form; only on sites you 
   --max-forms <n>        forms per run, hard maximum 10
   --dry-run              show what would be filled; submits nothing
   --only <n|#id|.class|text>  submit only the matching form(s); n is the form number from --dry-run (repeatable)
+  --yes                  skip the y/N prompt (unattended). Requires --only, so a run never auto-picks forms
+  --max-runtime <min>    whole submit run wall-clock cap (default 10)
+  --form-timeout <sec>   per-form cap (default 90)
   --include-newsletter   also submit newsletter forms (this subscribes the test inbox; skipped by default)
   --imap                 measure time-to-first-reply (env: LLA_IMAP_HOST, LLA_IMAP_USER, LLA_IMAP_PASS)
   --wait <minutes>       how long to wait for replies (default 15)
@@ -72,6 +76,9 @@ const options = {
   "max-forms": { type: "string" },
   "dry-run": { type: "boolean" },
   "include-newsletter": { type: "boolean" },
+  yes: { type: "boolean" },
+  "max-runtime": { type: "string" },
+  "form-timeout": { type: "string" },
   only: { type: "string", multiple: true },
   open: { type: "boolean" },
   imap: { type: "boolean" },
@@ -147,6 +154,18 @@ export async function main(argv = process.argv.slice(2)) {
         allowDomains,
         dryRun: !!v["dry-run"],
         includeNewsletter: !!v["include-newsletter"],
+        yes: !!v.yes,
+        maxRuntimeMs: num(v["max-runtime"], "max-runtime", 10, { min: 1, max: 240 }) * 60000,
+        formTimeoutMs: num(v["form-timeout"], "form-timeout", 90, { min: 10, max: 900 }) * 1000,
+        // Interactive human gate. Without a terminal (and without --yes --only) runSubmit refuses.
+        confirm:
+          !v.yes && process.stdin.isTTY
+            ? async (_summary, text) => {
+                console.error(`
+${text}`);
+                return askYesNo("Send these test leads? [y/N] ");
+              }
+            : null,
         only: v.only || [],
         maxForms: num(v["max-forms"], "max-forms", 10, { min: 1, max: 10 }),
         imap: !!v.imap,
@@ -159,18 +178,8 @@ export async function main(argv = process.argv.slice(2)) {
       if (v.json)
         console.log(JSON.stringify({ dryRun: true, plan: extra.plan }));
       else {
-        console.log("DRY RUN: nothing was submitted. Planned test leads:\n");
-        for (const p of extra.plan) {
-          console.log(
-            `- #${p.index} ${p.form} on ${p.page}: ${p.status}${p.reason ? " (" + p.reason + ")" : ""}`,
-          );
-          for (const f of p.fields)
-            console.log(
-              `    ${f.action.padEnd(6)} ${f.field} = ${f.value === undefined ? "" : JSON.stringify(f.value)}`,
-            );
-          if (p.skippedFields.length)
-            console.log(`    left empty: ${p.skippedFields.join(", ")}`);
-        }
+        console.log("DRY RUN: nothing was submitted.");
+        console.log(formatPlan(extra.plan, { email: v.email }));
       }
       return 0;
     }

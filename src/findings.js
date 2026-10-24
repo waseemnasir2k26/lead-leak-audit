@@ -544,6 +544,19 @@ export function submissionFindings(sub, { deadActions = new Set() } = {}) {
         }),
       );
       break;
+    case "timeout":
+      out.push(
+        mk({
+          id: "submit-timeout",
+          severity: "medium",
+          category: "forms",
+          title: `${label}: the test did not finish in time`,
+          detail: sub.detail,
+          fix: "Check the form by hand and look at the page for slow scripts or a handler that hangs. If the test lead arrived, the form works but is slow.",
+          where,
+        }),
+      );
+      break;
     case "no-request":
       out.push(
         mk({

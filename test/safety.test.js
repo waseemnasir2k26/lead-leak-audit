@@ -157,24 +157,13 @@ test("a normal contact form is still planned", () => {
   assert.equal(r.status, "planned");
 });
 
-test("allow-list: needs a reply channel and a name or message field", () => {
-  assert.equal(
-    leadEligibility({ fields: [name, msg] }),
-    "no email or phone field: does not look like a lead form",
-  );
-  assert.match(
-    leadEligibility({ fields: [email, fld({ name: "zip" })] }),
-    /no name or message/,
-  );
-  assert.equal(
-    leadEligibility({ fields: [fld({ type: "tel", name: "phone" }), name] }),
-    null,
-  );
-  const [r] = plan([
-    form({ fields: [fld({ name: "zip" }), fld({ name: "city" })] }),
-  ]);
+test("allow-list: positive signals plus a reply channel are required", () => {
+  assert.match(leadEligibility({ fields: [name, msg] }), /no email or phone/);
+  assert.match(leadEligibility({ fields: [email, fld({ name: "zip" })] }), /newsletter|no positive/);
+  assert.equal(leadEligibility({ fields: [fld({ type: "tel", name: "phone" }), name, msg] }), null);
+  const [r] = plan([form({ fields: [fld({ name: "zip" }), fld({ name: "city" })] })]);
   assert.equal(r.status, "skipped");
-  assert.match(r.reason, /does not look like a lead form/);
+  assert.match(r.reason, /no email or phone/);
 });
 
 test("newsletter forms are skipped unless --include-newsletter", () => {

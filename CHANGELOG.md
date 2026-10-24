@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.0 - 2026-10-25
+
+Redesign of form selection and of the network guard. Upgrade if you used `submit`.
+
+- **Strict allow-list.** A form is a lead form only with positive signals (message/enquiry box or contact wording, plus an email or phone field) and no negative signal in button text, labels, headings, select options, field names, form attributes or the page URL/title. Comment, review, rating, forum, donation, amount/price/quantity, refund, cancel, unsubscribe, erase, delete, GDPR, password, reset, recover, register, sign-up, RSVP, waitlist, webinar, checkout, payment, card, Stripe/PayPal/Braintree/Square, job-application and upload forms are rejected with a reason. The tool never fills an `amount`. Email-only password-reset, RSVP, waitlist and webinar forms are no longer treated as newsletters. Class names such as "shopify" or "profile" no longer reject a real contact form; the action path and the signals decide.
+- **Human confirmation.** `submit` prints the plan (page, heading, button text, fields, verdict and reason per form) and asks y/N. No terminal means refusal. `--yes` requires `--only`.
+- **Redirect rail.** The tool follows redirects itself, checking every hop against the host allow-list, forbidden endpoints and robots.txt; a hop that fails is aborted and reported as "blocked: redirect to foreign host". A confirmation page on a foreign host is never "delivered". Service workers are blocked; foreign WebSockets and foreign GET beacons after the click are blocked and recorded.
+- `target="_blank"` and `window.open` results are now seen (the whole browser context is watched), so they no longer show as "sent nothing". Form lookup at submit time requires an exact signature match and re-judges the live form.
+- Watchdogs: `--max-runtime` (default 10 min) and `--form-timeout` (default 90 s); timeouts are reported.
+- Tests: vendor-shape fixtures (Contact Form 7, Gravity Forms, WPForms, Elementor, HubSpot, GoHighLevel, Shopify and 28 look-alike forms) and bypass fixtures (fetch, beacon, XHR, popup, redirect chain, meta refresh, service worker, image GET, WebSocket), each asserting zero foreign hits.
+
 ## 1.0.2 - 2026-10-25
 
 Safety release. Upgrade if you used `submit`.

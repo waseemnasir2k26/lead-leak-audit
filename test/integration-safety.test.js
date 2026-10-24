@@ -7,6 +7,7 @@ import { runSubmit } from "../src/run.js";
 import { buildReport } from "../src/report.js";
 
 const FAST = {
+  confirm: async () => true,
   linkCheck: false,
   mxCheck: false,
   settleMs: 400,

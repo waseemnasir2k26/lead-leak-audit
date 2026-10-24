@@ -1,4 +1,5 @@
 // Turns per-page raw extractions into a deduplicated lead inventory.
+import { assessForm } from "./classify.js";
 import {
   analyzeTel,
   analyzeMailto,
@@ -80,8 +81,9 @@ export function buildInventory(pages, { ownHost = null } = {}) {
         formMarkup: f.captchaMarkup,
         pageScripts: [...x.scripts, ...x.iframes, ...(x.resources || [])],
       });
-      const shaped = { ...f, fields };
-      const kind = classifyForm(shaped);
+      const shaped = { ...f, fields, firstPage: p.url, pageTitle: x.title || '', pageH1: x.h1 || '' };
+      const assessment = assessForm(shaped);
+      const kind = assessment.kind;
       const sig = formSignature(shaped);
       const e = addPage(
         forms,
@@ -93,6 +95,13 @@ export function buildInventory(pages, { ownHost = null } = {}) {
           id: f.id,
           name: f.name,
           className: f.className,
+          assessment,
+          submitTexts: f.submitTexts || [],
+          heading: f.heading || '',
+          labelTexts: f.labelTexts || [],
+          paymentEmbed: !!f.paymentEmbed,
+          pageTitle: x.title || '',
+          pageH1: x.h1 || '',
           actionAttr: f.actionAttr,
           actionAbs: f.actionAbs,
           hasOnsubmit: f.hasOnsubmit,

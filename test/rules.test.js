@@ -168,7 +168,7 @@ test("form kinds", () => {
       f([
         { type: "text", name: "n" },
         { type: "email", name: "email" },
-        { tag: "textarea", type: "textarea", name: "m" },
+        { tag: "textarea", type: "textarea", name: "message" },
       ]),
     ),
     "contact",

@@ -182,6 +182,34 @@ export function extractPage(opts) {
         fields,
         submit,
         captchaMarkup: markup,
+        // Evidence for the allow-list classifier: what a human reads on and around the form.
+        submitTexts: Array.from(form.elements)
+          .filter((e) => /^(BUTTON|INPUT)$/.test(e.tagName) && !/^(button|reset|hidden|text|email|tel|number|checkbox|radio|file|password|date|url|search)$/i.test(e.getAttribute("type") || (e.tagName === "BUTTON" ? "submit" : "")))
+          .map((e) => ((e.value && e.tagName === "INPUT" ? e.value : e.textContent) || e.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 80))
+          .filter(Boolean),
+        labelTexts: Array.from(form.querySelectorAll("label, legend"))
+          .map((l) => (l.textContent || "").trim().replace(/\s+/g, " ").slice(0, 100))
+          .filter(Boolean)
+          .slice(0, 40),
+        heading: (function () {
+          const own = form.querySelector("legend, h1, h2, h3, h4, h5");
+          if (own) return own.textContent.trim().replace(/\s+/g, " ").slice(0, 120);
+          const aria = form.getAttribute("aria-label") || form.getAttribute("title");
+          if (aria) return aria.slice(0, 120);
+          let node = form;
+          for (let up = 0; up < 5 && node && node !== document.body; up++, node = node.parentElement) {
+            let sib = node.previousElementSibling;
+            for (let k = 0; k < 4 && sib; k++, sib = sib.previousElementSibling) {
+              if (/^H[1-6]$/.test(sib.tagName)) return sib.textContent.trim().replace(/\s+/g, " ").slice(0, 120);
+              const h = sib.querySelector && sib.querySelector("h1, h2, h3, h4, h5, h6");
+              if (h) return h.textContent.trim().replace(/\s+/g, " ").slice(0, 120);
+            }
+          }
+          return "";
+        })(),
+        paymentEmbed: !!form.querySelector(
+          '#card-element, .StripeElement, [data-stripe], .paypal-button, [id*="paypal" i], [class*="braintree" i], [id*="sq-card" i], iframe[src*="js.stripe.com"], iframe[src*="paypal."], iframe[src*="braintree"], iframe[src*="squareup"], iframe[src*="checkout."]',
+        ),
         rect: rectOf(form),
       };
     },

@@ -13,6 +13,7 @@ import {
 } from "./rules.js";
 import { VERSION } from "./scan.js";
 import { forbiddenEndpoint } from "./guard.js";
+import { assessForm } from "./classify.js";
 
 export const HARD_MAX_FORMS = 10;
 export const TEST_NAME = "LEAD-LEAK-AUDIT TEST";
@@ -143,7 +144,7 @@ export function valueFor(f, ctx) {
   if (/zip|postal|postcode/.test(hint))
     return { action: "fill", value: "10001" };
   if (/city|town/.test(hint)) return { action: "fill", value: "Test City" };
-  if (/budget|price|amount/.test(hint)) return { action: "fill", value: "1" };
+  if (/budget/.test(hint)) return { action: "fill", value: "N/A" };
   return {
     action: "fill",
     value: ctx.textOnlyNameField ? `${TEST_NAME} ${ctx.leadId}` : TEST_NAME,
@@ -239,6 +240,8 @@ export function classifyOutcome({
   relevant = [],
   blockedForeign = [],
   blockedForbidden = [],
+  blockedRedirects = [],
+  finalHostForeign = null,
   validationBlocked = false,
   startUrl,
   finalUrl,
@@ -254,6 +257,24 @@ export function classifyOutcome({
         `${r.method} ${safePath(r.url)} -> ${r.failed ? "FAILED " + (r.error || "") : r.status}`,
     )
     .join(" | ");
+  if (blockedRedirects.length) {
+    const r = blockedRedirects[0];
+    return {
+      status: "skipped",
+      detail:
+        r.kind === "forbidden"
+          ? `blocked: redirect to forbidden endpoint ${r.path} on ${r.host}. The server answered the submission with a redirect to an endpoint this tool never touches; the redirect was aborted in the browser.`
+          : `blocked: redirect to foreign host ${r.host}. The server answered the submission with a redirect outside the allowed hosts; the redirect was aborted in the browser, so nothing was sent there and no confirmation can be verified.`,
+      evidence,
+    };
+  }
+  if (finalHostForeign) {
+    return {
+      status: "skipped",
+      detail: `blocked: the result page is on a foreign host (${finalHostForeign}), so delivery cannot be confirmed and is not reported as delivered.`,
+      evidence,
+    };
+  }
   if (blockedForbidden.length) {
     const paths = [...new Set(blockedForbidden)].slice(0, 3).join(", ");
     return {
@@ -412,21 +433,23 @@ export function planSubmissions(inventory, { email, allowed, maxForms = HARD_MAX
   const results = [];
   let used = 0;
   for (const { f, index } of indexed) {
-    const base = { sig: f.sig, index, label: formLabel(f), page: f.firstPage, kind: f.kind, action: f.actionAbs };
+    const base = { sig: f.sig, index, label: formLabel(f), page: f.firstPage, kind: f.kind, action: f.actionAbs, heading: f.heading || f.pageH1 || '', submitText: (f.submitTexts && f.submitTexts[0]) || f.submit?.text || '' };
     const skip = (reason, status = 'skipped') => results.push({ ...base, status, reason });
-    const bad = forbiddenForm(f);
-    if (bad) { skip(bad.why); continue; }
-    if (f.kind !== 'contact' && f.kind !== 'newsletter') { skip(NEVER_REASON[f.kind] || `${f.kind} form: never submitted`); continue; }
-    if (f.kind === 'newsletter' && !includeNewsletter) { skip('newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.'); continue; }
+    const a = f.assessment || assessForm(f);
+    base.kind = a.kind;
+    if (a.verdict === 'reject') {
+      const first = a.reasons[0] || 'not a lead form';
+      skip(first.startsWith('forbidden endpoint') ? `blocked: ${first}` : `rejected as ${a.kind}: ${a.reasons.join('; ')}`);
+      continue;
+    }
+    if (a.verdict === 'newsletter' && !includeNewsletter) { skip('newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.'); continue; }
     if (!matchesOnly(f, index, only)) { skip('not selected by --only'); continue; }
-    const why = leadEligibility(f);
-    if (f.kind === 'contact' && why) { skip(why); continue; }
     let pageUrl = null;
     try { pageUrl = new URL(f.firstPage); } catch { /* handled below */ }
     if (robots && pageUrl && !robots.isAllowed(pageUrl.pathname + pageUrl.search)) { skip('robots.txt disallows this page, so it is not visited or submitted'); continue; }
     const badUrl = [f.actionAbs, ...(f.submitActions || []).map((x) => x.action)]
       .filter(Boolean)
-      .map((u) => forbiddenEndpoint(u, { robots, allowSignup: includeNewsletter && f.kind === "newsletter" }))
+      .map((u) => forbiddenEndpoint(u, { robots, allowSignup: includeNewsletter && a.verdict === "newsletter" }))
       .find(Boolean);
     if (badUrl) { skip(`blocked: forbidden endpoint ${badUrl.path} (${badUrl.why})`); continue; }
     if (used >= cap) { skip(`Over the ${cap}-form cap for one run; run again to test the rest.`); continue; }
@@ -453,7 +476,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function runSubmissions(
   browser,
   planned,
-  { allowed, settleMs = 1500, waitMs = 10000, log = () => {}, robots = null, allowSignupForNewsletter = false },
+  {
+    allowed,
+    settleMs = 1500,
+    waitMs = 10000,
+    log = () => {},
+    robots = null,
+    allowSignupForNewsletter = false,
+    deadline = Infinity, // epoch ms: whole-run wall-clock cap
+    formTimeoutMs = 90000, // per-form cap
+  },
 ) {
   const out = [];
   for (const item of planned) {
@@ -461,240 +493,437 @@ export async function runSubmissions(
       out.push(strip(item));
       continue;
     }
+    if (Date.now() >= deadline) {
+      out.push({
+        ...strip(item),
+        status: "skipped",
+        reason:
+          "run time cap reached before this form was tested (see --max-runtime); it was not submitted",
+        timedOut: true,
+      });
+      continue;
+    }
     log(`submit ${item.label} on ${item.page}`);
-    const t0 = Date.now();
-    const ctx = await browser.newContext({
-      viewport: { width: 1280, height: 800 },
-      userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36 lead-leak-audit/${VERSION}`,
-    });
-    const blockedForeign = [];
-    const blockedForbidden = [];
-    let armed = false;
-    await ctx.route("**/*", (route) => {
-      const req = route.request();
-      let u;
-      try {
-        u = new URL(req.url());
-      } catch {
-        return route.continue();
-      }
-      const safeMethod = ["GET", "HEAD", "OPTIONS"].includes(req.method());
-      if (
-        (!safeMethod || req.isNavigationRequest()) &&
-        /^https?:$/.test(u.protocol) &&
-        !isHostAllowed(u.host, allowed)
-      ) {
+    out.push(
+      await runOneForm(browser, item, {
+        allowed,
+        settleMs,
+        waitMs,
+        robots,
+        allowSignupForNewsletter,
+        formTimeoutMs: Math.min(
+          formTimeoutMs,
+          Math.max(5000, deadline - Date.now()),
+        ),
+      }),
+    );
+  }
+  return out;
+}
+
+async function runOneForm(
+  browser,
+  item,
+  {
+    allowed,
+    settleMs,
+    waitMs,
+    robots,
+    allowSignupForNewsletter,
+    formTimeoutMs,
+  },
+) {
+  const t0 = Date.now();
+  const ctx = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    serviceWorkers: "block", // a service worker could answer or forward requests behind the route handler
+    userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36 lead-leak-audit/${VERSION}`,
+  });
+  const record = { ...strip(item), submittedAt: null };
+  let timer;
+  const work = doOneForm(ctx, item, record, {
+    allowed,
+    settleMs,
+    waitMs,
+    robots,
+    allowSignupForNewsletter,
+  });
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), formTimeoutMs);
+  });
+  try {
+    const r = await Promise.race([work.then(() => "done"), timeout]);
+    if (r === "timeout") {
+      record.status = "timeout";
+      record.detail = `The test of this form did not finish within ${Math.round(formTimeoutMs / 1000)}s and was stopped. The lead may or may not have been sent; check the form's inbox.`;
+      record.timedOut = true;
+    }
+  } finally {
+    clearTimeout(timer);
+    work.catch(() => {});
+    record.durationMs = Date.now() - t0;
+    await ctx.close().catch(() => {});
+  }
+  return record;
+}
+
+async function doOneForm(
+  ctx,
+  item,
+  record,
+  { allowed, settleMs, waitMs, robots, allowSignupForNewsletter },
+) {
+  const blockedForeign = [];
+  const blockedForbidden = [];
+  const blockedRedirects = [];
+  const chainFinal = []; // URLs the server redirected us through (we follow them ourselves)
+  const blockedBeacons = []; // foreign GET/image/websocket traffic after arming: recorded, never sent
+  let armed = false;
+
+  await ctx.route("**/*", async (route) => {
+    const req = route.request();
+    let u;
+    try {
+      u = new URL(req.url());
+    } catch {
+      return route.continue();
+    }
+    if (!/^https?:$/.test(u.protocol)) return route.continue();
+    const safeMethod = ["GET", "HEAD", "OPTIONS"].includes(req.method());
+    const nav = req.isNavigationRequest();
+    const rt = req.resourceType();
+    // 1. Host allow-list.
+    if (!isHostAllowed(u.host, allowed)) {
+      if (!safeMethod || nav) {
         blockedForeign.push(u.host);
         return route.abort("blockedbyclient");
       }
-      // Endpoint gate: judge what the request would DO by its real URL, whatever the DOM claimed.
-      // Non-GET requests are always judged; navigations and fetch/XHR GETs once the submit is armed.
-      const rt = req.resourceType();
-      const judged = !safeMethod || (armed && (req.isNavigationRequest() || rt === "fetch" || rt === "xhr"));
-      if (judged && /^https?:$/.test(u.protocol)) {
-        const hit = forbiddenEndpoint(req.url(), { robots, allowSignup: item.kind === "newsletter" && allowSignupForNewsletter });
-        if (hit) {
-          blockedForbidden.push(hit.path);
-          return route.abort("blockedbyclient");
-        }
+      if (armed) {
+        blockedBeacons.push(
+          `${rt} GET ${u.host}${u.pathname}${u.search ? "?…" : ""}`,
+        );
+        return route.abort("blockedbyclient");
       }
       return route.continue();
-    });
-    const page = await ctx.newPage();
-    const relevant = [];
-    const pending = new Map();
-    let formMethod = item.form.method;
-    page.on("request", (r) => {
-      let u;
+    }
+    // 2. Endpoint gate: judge what the request would DO by its real URL, whatever the DOM claimed.
+    const judged =
+      !safeMethod || (armed && (nav || rt === "fetch" || rt === "xhr"));
+    if (judged) {
+      const hit = forbiddenEndpoint(req.url(), {
+        robots,
+        allowSignup: item.kind === "newsletter" && allowSignupForNewsletter,
+      });
+      if (hit) {
+        blockedForbidden.push(hit.path);
+        return route.abort("blockedbyclient");
+      }
+    }
+    // 3. Redirect rail. The browser is never allowed to follow a 3xx on its own: every hop is fetched here
+    //    with maxRedirects 0, checked against the host allow-list, the endpoint gate and robots.txt, and only
+    //    the final response is handed back. A hop that fails any check is aborted and reported.
+    if (!safeMethod || (armed && nav)) {
+      let method = req.method();
+      let body = req.postDataBuffer();
+      let current = req.url();
+      let resp;
       try {
-        u = new URL(r.url());
+        resp = await route.fetch({ maxRedirects: 0, timeout: 20000 });
       } catch {
-        return;
+        return route.abort('failed');
       }
-      if (!isHostAllowed(u.host, allowed)) return;
-      const nonGet = !["GET", "HEAD", "OPTIONS"].includes(r.method());
-      const nav = r.isNavigationRequest() && r.frame() === page.mainFrame();
-      if (nonGet || (formMethod === "get" && nav && armed)) {
-        const rec = { method: r.method(), url: r.url(), status: null };
-        pending.set(r, rec);
-        relevant.push(rec);
-      } else if (nav && armed) {
-        const rec = {
-          method: r.method(),
-          url: r.url(),
-          status: null,
-          nav: true,
-        };
-        pending.set(r, rec);
-        relevant.push(rec);
-      }
-    });
-    page.on("response", (r) => {
-      const rec = pending.get(r.request());
-      if (rec) rec.status = r.status();
-    });
-    page.on("requestfailed", (r) => {
-      const rec = pending.get(r);
-      if (rec && rec.status === null) {
-        rec.failed = true;
-        rec.error = r.failure()?.errorText || "failed";
-      }
-    });
-    const record = { ...strip(item), submittedAt: null };
-    try {
-      await page.goto(item.page, {
-        waitUntil: "domcontentloaded",
-        timeout: 20000,
-      });
-      await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
-      await page.waitForTimeout(settleMs);
-      assertHostAllowed(new URL(page.url()).host, allowed); // final host after redirects
-      const x = await page.evaluate(extractPage, {
-        chatSelectors: Object.fromEntries(
-          CHAT_VENDORS.map((v) => [v.vendor, v.dom]),
-        ),
-      });
-      const idx = x.forms.findIndex(
-        (f) =>
-          formSignature({ ...f, fields: f.fields.map((fl) => ({ ...fl })) }) ===
-            item.sig || sameForm(f, item.form),
-      );
-      if (idx < 0)
-        throw Object.assign(new Error("form not found on page any more"), {
-          soft: true,
-        });
-      const live = x.forms[idx];
-      const cap = detectCaptcha({
-        formMarkup: live.captchaMarkup,
-        pageScripts: [...x.scripts, ...x.iframes, ...(x.resources || [])],
-      });
-      if (cap.present) {
-        record.status = "blocked-captcha";
-        record.captcha = cap.kind;
-        record.reason = "Blocked by CAPTCHA, test manually.";
-        out.push(record);
-        continue;
-      }
-      const unfillable = item.plan.find((p) => p.action === "unfillable");
-      if (unfillable) {
-        record.status = "skipped";
-        record.reason = `Cannot fill the form: ${unfillable.why}.`;
-        out.push(record);
-        continue;
-      }
-      formMethod = live.method;
-      const formLoc = page.locator("form").nth(idx);
-      // form.elements also covers controls attached through form="id" outside the <form> tag.
-      const controls = await formLoc.evaluateHandle((f) =>
-        Array.from(f.elements).filter((e) => /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName)),
-      );
-      for (const p of item.plan) {
+      for (let hop = 0; hop < 8; hop++) {
+        const status = resp.status();
+        const loc = resp.headers().location;
+        if (!(status >= 300 && status < 400 && loc)) break;
+        let target;
         try {
-          const el = (await controls.getProperty(String(p.i))).asElement();
-          if (!el) throw new Error("field not found");
-          if (p.action === "fill") await el.fill(p.value, { timeout: 4000 });
-          else if (p.action === "select")
-            await el.selectOption(p.value, { timeout: 4000 });
-          else if (p.action === "check")
-            await el.check({ timeout: 4000, force: true });
-        } catch (e) {
-          p.error = String(e.message).split("\n")[0];
+          target = new URL(loc, current);
+        } catch {
+          return route.abort('blockedbyclient');
         }
+        if (/^https?:$/.test(target.protocol) && !isHostAllowed(target.host, allowed)) {
+          blockedRedirects.push({ host: target.host, kind: 'foreign' });
+          return route.abort('blockedbyclient');
+        }
+        const hit = forbiddenEndpoint(target.href, { robots, allowSignup: item.kind === 'newsletter' && allowSignupForNewsletter });
+        if (hit) {
+          blockedRedirects.push({ host: target.host, kind: 'forbidden', path: hit.path });
+          return route.abort('blockedbyclient');
+        }
+        // 301/302/303 turn a POST into a GET; 307/308 keep the method and the body.
+        const keep = status === 307 || status === 308;
+        const nextMethod = keep ? method : method === 'HEAD' ? 'HEAD' : 'GET';
+        const headers = { ...req.headers() };
+        if (!keep || !body) for (const h of ['content-length', 'content-type', 'transfer-encoding']) delete headers[h];
+        delete headers.host;
+        try {
+          resp = await route.fetch({ url: target.href, method: nextMethod, headers, postData: keep && body ? body : undefined, maxRedirects: 0, timeout: 20000 });
+        } catch {
+          return route.abort('failed');
+        }
+        method = nextMethod;
+        if (!keep) body = null;
+        current = target.href;
+        chainFinal.push(current);
+        if (hop === 7) return route.abort('blockedbyclient'); // redirect loop
       }
-      const textBefore = await page.evaluate(() =>
+      return route.fulfill({ response: resp });
+    }
+    return route.continue();
+  });
+  // WebSockets to a host that is not allowed are closed without ever connecting.
+  await ctx.routeWebSocket(/.*/, (ws) => {
+    let host = "";
+    try {
+      host = new URL(ws.url()).host;
+    } catch {
+      /* unparseable */
+    }
+    if (host && isHostAllowed(host, allowed)) {
+      ws.connectToServer();
+    } else {
+      blockedBeacons.push(`websocket ${host || ws.url()}`);
+      ws.close();
+    }
+  });
+
+  const page = await ctx.newPage();
+  const relevant = [];
+  const pending = new Map();
+  const popups = [];
+  let formMethod = item.form.method;
+
+  // Watch the whole context, not one page: target=_blank and window.open results arrive in a NEW page whose
+  // first request starts before any page-level listener could be attached.
+  const isMainFrameNav = (r) => {
+    if (!r.isNavigationRequest()) return false;
+    try {
+      return r.frame().parentFrame() === null;
+    } catch {
+      return true; // the frame of a popup's very first request is not available yet
+    }
+  };
+  ctx.on('request', (r) => {
+    let u;
+    try {
+      u = new URL(r.url());
+    } catch {
+      return;
+    }
+    if (!isHostAllowed(u.host, allowed)) return;
+    const nonGet = !['GET', 'HEAD', 'OPTIONS'].includes(r.method());
+    const nav = isMainFrameNav(r);
+    if (nonGet || (nav && armed)) {
+      const rec = { method: r.method(), url: r.url(), status: null, nav: nav && !nonGet };
+      pending.set(r, rec);
+      relevant.push(rec);
+    }
+  });
+  ctx.on('response', (r) => {
+    const rec = pending.get(r.request());
+    if (rec) rec.status = r.status();
+  });
+  ctx.on('requestfailed', (r) => {
+    const rec = pending.get(r);
+    if (rec && rec.status === null) {
+      rec.failed = true;
+      rec.error = r.failure()?.errorText || 'failed';
+    }
+  });
+  ctx.on('page', (np) => {
+    if (np !== page) popups.push(np);
+  });
+
+  try {
+    await page.goto(item.page, {
+      waitUntil: "domcontentloaded",
+      timeout: 20000,
+    });
+    await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(settleMs);
+    assertHostAllowed(new URL(page.url()).host, allowed); // final host after redirects
+    const x = await page.evaluate(extractPage, {
+      chatSelectors: Object.fromEntries(
+        CHAT_VENDORS.map((v) => [v.vendor, v.dom]),
+      ),
+    });
+    // Find the form by its exact signature. A loose fallback is used only when it is unambiguous,
+    // so a look-alike form can never be picked by mistake.
+    const sigOf = (f) => formSignature({ ...f, fields: f.fields.map((fl) => ({ ...fl })) });
+    let idx = x.forms.findIndex((f) => sigOf(f) === item.sig);
+    if (idx < 0) {
+      const loose = x.forms.map((f, k) => (sameForm(f, item.form) ? k : -1)).filter((k) => k >= 0);
+      idx = loose.length === 1 ? loose[0] : -1;
+    }
+    if (idx < 0)
+      throw Object.assign(new Error("form not found on page any more"), {
+        soft: true,
+      });
+    const live = x.forms[idx];
+    // Re-judge the LIVE form: the page may differ from what the scan saw.
+    const liveForm = {
+      ...live,
+      fields: live.fields.map((fl) => ({
+        ...fl,
+        honeypot: isHoneypotField(fl),
+      })),
+      firstPage: page.url(),
+      pageTitle: x.title || "",
+      pageH1: x.h1 || "",
+    };
+    const liveAssessment = assessForm(liveForm);
+    if (
+      liveAssessment.verdict === "reject" ||
+      (liveAssessment.verdict === "newsletter" && item.kind !== "newsletter")
+    ) {
+      record.status = "skipped";
+      record.reason = `Re-checked on the live page and rejected as ${liveAssessment.kind}: ${liveAssessment.reasons.join("; ")}`;
+      return;
+    }
+    const cap = detectCaptcha({
+      formMarkup: live.captchaMarkup,
+      pageScripts: [...x.scripts, ...x.iframes, ...(x.resources || [])],
+    });
+    if (cap.present) {
+      record.status = "blocked-captcha";
+      record.captcha = cap.kind;
+      record.reason = "Blocked by CAPTCHA, test manually.";
+      return;
+    }
+    const unfillable = item.plan.find((p) => p.action === "unfillable");
+    if (unfillable) {
+      record.status = "skipped";
+      record.reason = `Cannot fill the form: ${unfillable.why}.`;
+      return;
+    }
+    formMethod = live.method;
+    const formLoc = page.locator("form").nth(idx);
+    // form.elements also covers controls attached through form="id" outside the <form> tag.
+    const controls = await formLoc.evaluateHandle((f) =>
+      Array.from(f.elements).filter((e) =>
+        /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName),
+      ),
+    );
+    for (const p of item.plan) {
+      try {
+        const el = (await controls.getProperty(String(p.i))).asElement();
+        if (!el) throw new Error("field not found");
+        if (p.action === "fill") await el.fill(p.value, { timeout: 4000 });
+        else if (p.action === "select")
+          await el.selectOption(p.value, { timeout: 4000 });
+        else if (p.action === "check")
+          await el.check({ timeout: 4000, force: true });
+      } catch (e) {
+        p.error = String(e.message).split("\n")[0];
+      }
+    }
+    const textBefore = await page.evaluate(() =>
+      document.body.innerText.slice(0, 8000),
+    );
+    const startUrl = page.url();
+    record.submittedAt = new Date().toISOString();
+    const t1 = Date.now();
+    relevant.length = 0;
+    pending.clear();
+    armed = true; // stays armed for the rest of this context's life
+    const btn = formLoc
+      .locator(
+        'button[type="submit"], input[type="submit"], button:not([type])',
+      )
+      .first();
+    if (await btn.count()) {
+      await btn.click({ timeout: 5000 }).catch(async () => {
+        // The click may have fired the submit before timing out. Only fall back
+        // when nothing went out, so a form never receives two test leads.
+        await sleep(1000);
+        if (
+          relevant.length === 0 &&
+          popups.length === 0 &&
+          page.url() === startUrl
+        )
+          await formLoc.evaluate((f) => f.requestSubmit()).catch(() => {});
+      });
+    } else {
+      await formLoc.evaluate((f) => f.requestSubmit());
+    }
+    // Wait for a response (or the wait budget), then a short settle for redirects and rendering.
+    const deadline = Date.now() + waitMs;
+    while (
+      Date.now() < deadline &&
+      !relevant.some((r) => r.status !== null || r.failed)
+    )
+      await sleep(200);
+    await sleep(1200);
+    const resultPage = popups.filter((p) => !p.isClosed()).at(-1) || page;
+    if (resultPage !== page)
+      await resultPage
+        .waitForLoadState("domcontentloaded", { timeout: 3000 })
+        .catch(() => {});
+    let validationBlocked = false;
+    let formGone = false;
+    let textAfter = "";
+    try {
+      textAfter = await resultPage.evaluate(() =>
         document.body.innerText.slice(0, 8000),
       );
-      const startUrl = page.url();
-      record.submittedAt = new Date().toISOString();
-      const t1 = Date.now();
-      relevant.length = 0;
-      pending.clear();
-      armed = true;
-      const btn = formLoc
-        .locator(
-          'button[type="submit"], input[type="submit"], button:not([type])',
-        )
-        .first();
-      if (await btn.count()) {
-        await btn.click({ timeout: 5000 }).catch(async () => {
-          // The click may have fired the submit before timing out. Only fall back
-          // when nothing went out, so a form never receives two test leads.
-          await sleep(1000);
-          if (relevant.length === 0 && page.url() === startUrl)
-            await formLoc.evaluate((f) => f.requestSubmit()).catch(() => {});
-        });
-      } else {
-        await formLoc.evaluate((f) => f.requestSubmit());
-      }
-      // Wait for a response (or the wait budget), then a short settle for redirects and rendering.
-      const deadline = Date.now() + waitMs;
-      while (
-        Date.now() < deadline &&
-        !relevant.some((r) => r.status !== null || r.failed)
-      )
-        await sleep(200);
-      await sleep(1200);
-      armed = false;
-      let validationBlocked = false;
-      let formGone = false;
-      let textAfter = "";
-      try {
-        textAfter = await page.evaluate(() =>
-          document.body.innerText.slice(0, 8000),
-        );
-        const state = await page.evaluate((i) => {
-          const f = document.querySelectorAll("form")[i];
-          if (!f) return { gone: true, invalid: false };
-          const r = f.getBoundingClientRect();
-          return {
-            gone:
-              r.width === 0 ||
-              r.height === 0 ||
-              getComputedStyle(f).display === "none",
-            invalid: !f.checkValidity(),
-          };
-        }, idx);
-        formGone = state.gone;
-        validationBlocked = state.invalid;
-      } catch {
-        formGone = true; // page navigated away mid-evaluate
-      }
-      const verdict = classifyOutcome({
-        relevant,
-        blockedForeign,
-        blockedForbidden,
-        validationBlocked,
-        startUrl,
-        finalUrl: page.url(),
-        textBefore,
-        textAfter,
-        formGone,
-      });
-      Object.assign(record, verdict, {
-        networkErrors: relevant
-          .filter((r) => r.failed)
-          .map((r) => `${r.method} ${safePath(r.url)}: ${r.error}`),
-        respondedInMs: Date.now() - t1,
-      });
-    } catch (err) {
-      if (err instanceof RailError) {
-        record.status = "skipped";
-        record.reason = err.message;
-      } else if (err.soft) {
-        record.status = "skipped";
-        record.reason = err.message;
-      } else {
-        record.status = "failed";
-        record.detail = `Could not complete the test: ${String(err.message).split("\n")[0]}`;
-        record.evidence = null;
-      }
-    } finally {
-      record.durationMs = Date.now() - t0;
-      await ctx.close().catch(() => {});
+      const state = await page.evaluate((i) => {
+        const f = document.querySelectorAll("form")[i];
+        if (!f) return { gone: true, invalid: false };
+        const r = f.getBoundingClientRect();
+        return {
+          gone:
+            r.width === 0 ||
+            r.height === 0 ||
+            getComputedStyle(f).display === "none",
+          invalid: !f.checkValidity(),
+        };
+      }, idx);
+      formGone = state.gone;
+      validationBlocked = state.invalid;
+    } catch {
+      formGone = true; // page navigated away mid-evaluate
     }
-    out.push(record);
+    let finalUrl = chainFinal.length && resultPage === page ? chainFinal[chainFinal.length - 1] : resultPage.url();
+    let finalHostForeign = null;
+    try {
+      const fu = new URL(finalUrl);
+      if (/^https?:$/.test(fu.protocol) && !isHostAllowed(fu.host, allowed))
+        finalHostForeign = fu.host;
+    } catch {
+      /* about:blank and friends */
+    }
+    const verdict = classifyOutcome({
+      relevant,
+      blockedForeign,
+      blockedForbidden,
+      blockedRedirects,
+      finalHostForeign,
+      validationBlocked,
+      startUrl,
+      finalUrl,
+      textBefore,
+      textAfter,
+      formGone,
+    });
+    Object.assign(record, verdict, {
+      networkErrors: relevant
+        .filter((r) => r.failed)
+        .map((r) => `${r.method} ${safePath(r.url)}: ${r.error}`),
+      respondedInMs: Date.now() - t1,
+      blockedRequests: blockedBeacons.slice(0, 20),
+      popups: popups.length,
+    });
+  } catch (err) {
+    if (err instanceof RailError || err.soft) {
+      record.status = "skipped";
+      record.reason = err.message;
+    } else {
+      record.status = "failed";
+      record.detail = `Could not complete the test: ${String(err.message).split("\n")[0]}`;
+      record.evidence = null;
+    }
   }
-  return out;
 }
 
 function sameForm(live, planned) {
@@ -715,6 +944,8 @@ export function summarizePlan(planned) {
   return planned.map((p) => ({
     index: p.index,
     kind: p.kind,
+    heading: p.heading,
+    submitText: p.submitText,
     form: p.label,
     page: p.page,
     status: p.status === "planned" ? "would-submit" : p.status,

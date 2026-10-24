@@ -2,7 +2,9 @@
 import fs from "node:fs";
 import { fetchRobots } from "./net.js";
 import { scan, rescore, launchBrowser, normalizeUrl } from "./scan.js";
+import { formatPlan } from "./confirm.js";
 import {
+  RailError,
   checkRails,
   planSubmissions,
   runSubmissions,
@@ -40,7 +42,12 @@ export async function runSubmit(url, opts = {}) {
     rand,
     includeNewsletter = false,
     only = [],
+    confirm = null, // async (plan, text) => boolean: the human gate
+    yes = false, // unattended: only with an explicit --only selection
+    maxRuntimeMs = 10 * 60 * 1000,
+    formTimeoutMs = 90 * 1000,
   } = opts;
+  const runStart = Date.now();
   const { allowed } = checkRails({ url, iOwn, email, allowDomains }); // throws RailError
   let imapCfg = null;
   if (imap) {
@@ -77,7 +84,20 @@ export async function runSubmit(url, opts = {}) {
         },
       };
     }
+    // Human gate: nothing is sent until a person has seen the plan and said yes.
+    if (planned.some((p) => p.status === "planned")) {
+      const summary = summarizePlan(planned);
+      if (confirm) {
+        if (!(await confirm(summary, formatPlan(summary, { email })))) throw new RailError("Cancelled at the confirmation prompt: nothing was sent.");
+      } else if (yes) {
+        if (!only.length) throw new RailError("--yes needs --only <n|#id|.class|text>: unattended runs must name the forms they may submit.");
+      } else {
+        throw new RailError("Refusing to send without confirmation. Run interactively and answer y, or pass --yes together with --only to name the forms for an unattended run.");
+      }
+    }
     const submissions = await runSubmissions(browser, planned, {
+      deadline: runStart + maxRuntimeMs,
+      formTimeoutMs,
       allowed,
       settleMs: opts.settleMs ? Math.min(opts.settleMs, 2000) : 1500,
       log,

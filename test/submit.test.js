@@ -130,8 +130,8 @@ test("plan: CAPTCHA forms are marked blocked and never planned", () => {
 test("plan: one slot per form, search/login never submitted, hard cap of 10", () => {
   const forms = Array.from({ length: 14 }, (_, i) => mkForm({ sig: "s" + i }));
   forms.push(
-    mkForm({ kind: "login", sig: "login" }),
-    mkForm({ kind: "search", sig: "search" }),
+    mkForm({ sig: "login", fields: [...mkForm().fields, field({ i: 9, type: "password", name: "pw" })] }),
+    mkForm({ sig: "search", fields: [field({ i: 0, type: "search", name: "q" })] }),
   );
   const out = planSubmissions(inv(forms), {
     email: "qa@acme.test",

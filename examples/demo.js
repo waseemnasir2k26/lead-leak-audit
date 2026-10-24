@@ -18,6 +18,7 @@ try {
   console.log(`Demo site: ${site.url}`);
   const { result, extra } = await runSubmit(site.url, {
     iOwn: true,
+    confirm: async () => true, // local fixture site: no human needed
     email: "inbox@example.test",
     linkCheck: false,
     mxCheck: false,

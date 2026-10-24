@@ -38,7 +38,7 @@ footer a{color:#1d4ed8}
 <body>
 <main>
 <h1>Lead leak report</h1>
-<p class="dim"><code>http://127.0.0.1:4173/</code> · submit mode · 2026-10-24 18:31 UTC · 7 page(s) scanned</p>
+<p class="dim"><code>http://127.0.0.1:4173/</code> · submit mode · 2026-10-24 19:16 UTC · 7 page(s) scanned</p>
 
 <section class="hero">
   <div class="ring"><div><b>23</b><span>of 100</span></div></div>
@@ -146,7 +146,7 @@ footer a{color:#1d4ed8}
 </article>
 <article class="leak" style="--c:#1d4ed8">
   <header><span class="sev">info</span><h3>form file-upload (name/email/cv): not submitted</h3></header>
-  <p>file upload form: never submitted</p>
+  <p>rejected as file-upload: file upload field</p>
   <p class="fix"><strong>Fix:</strong> Nothing to do unless this is a lead form; then adjust --allow-domain or test it by hand.</p>
   <p class="where">Found on: <code>http://127.0.0.1:4173/risky.html</code></p>
   
@@ -166,7 +166,7 @@ footer a{color:#1d4ed8}
   
 </article>
 
-<h2>Test submissions</h2><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody><tr><td>contact (name/email/phone)</td><td><span class="st st-delivered">delivered</span></td><td>Accepted (HTTP 200) and the visitor saw a confirmation on /thanks.html.</td></tr><tr><td>contact (fullname/email/details)</td><td><span class="st st-failed">failed</span></td><td>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</td></tr><tr><td>comment (author/email/comment)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /wp-comments-post.php (comment endpoint)</td></tr><tr><td>commerce (quantity)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /cart/add (cart, checkout, order or payment endpoint)</td></tr><tr><td>account (email)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /unsubscribe (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>account (name/email/message)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /account/delete (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>file-upload (name/email/cv)</td><td><span class="st st-skipped">skipped</span></td><td>file upload form: never submitted</td></tr><tr><td>newsletter (email)</td><td><span class="st st-skipped">skipped</span></td><td>newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.</td></tr><tr><td>contact (email/message)</td><td><span class="st st-blocked-captcha">blocked-captcha</span></td><td>Blocked by CAPTCHA, test manually.</td></tr></tbody></table></div>
+<h2>Test submissions</h2><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody><tr><td>contact (name/email/phone)</td><td><span class="st st-delivered">delivered</span></td><td>Accepted (HTTP 200) and the visitor saw a confirmation on /thanks.html.</td></tr><tr><td>contact (fullname/email/details)</td><td><span class="st st-failed">failed</span></td><td>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</td></tr><tr><td>comment (author/email/comment)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /wp-comments-post.php (comment endpoint)</td></tr><tr><td>commerce (quantity)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /cart/add (cart, checkout, order or payment endpoint)</td></tr><tr><td>account (email)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /unsubscribe (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>account (name/email/message)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /account/delete (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>file-upload (name/email/cv)</td><td><span class="st st-skipped">skipped</span></td><td>rejected as file-upload: file upload field</td></tr><tr><td>newsletter (email)</td><td><span class="st st-skipped">skipped</span></td><td>newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.</td></tr><tr><td>contact (email/message)</td><td><span class="st st-blocked-captcha">blocked-captcha</span></td><td>Blocked by CAPTCHA, test manually.</td></tr></tbody></table></div>
 <p class="dim">Reply timing was not measured (no IMAP access configured).</p>
 
 <h2>What was found</h2>
