@@ -32,9 +32,11 @@ try {
     .filter((x) => x.severity !== "info")
     .slice(0, 8))
     console.log(`  [${f.severity}] ${f.title}`);
+  const never = extra.submissions.filter((s) => s.status === "skipped");
   console.log(
-    `\nLeads the demo server actually received: ${site.leads.length}`,
+    `\nForms it refused to submit: ${never.length} (${never.map((s) => s.kind).join(", ")})`,
   );
+  console.log(`Leads the demo server actually received: ${site.leads.length}`);
   console.log(`Report: ${htmlPath}`);
   if (saveSample) {
     const dest = path.join(here, "sample-report.html");

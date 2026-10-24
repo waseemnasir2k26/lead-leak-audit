@@ -272,3 +272,26 @@ test("cli: --ci exits 2 when the score is below the threshold; writes report fil
   ]);
   assert.equal(drop.status, 2);
 });
+
+test('cli: first scheduled run with a missing baseline prints a summary, does not fail, and seeds the baseline', async () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'lla-first-'));
+  const baseline = path.join(out, 'baseline', 'report.json');
+  const args = ['scan', site.url, '--ci', '--threshold', '0', '--baseline', baseline, '--update-baseline', '--no-link-check', '--no-mx-check', '--settle', '300', '--out', path.join(out, 'latest'), '--quiet', '--json'];
+  const first = await cli(args);
+  assert.equal(first.status, 0, first.stderr);
+  const s1 = JSON.parse(first.stdout.trim().split('\n').pop());
+  assert.equal(s1.pass, true);
+  assert.equal(s1.baseline, null);
+  assert.ok(s1.notes.some((n) => /No baseline yet/.test(n)));
+  assert.ok(s1.notes.some((n) => /Baseline created/.test(n)));
+  assert.ok(fs.existsSync(baseline));
+
+  // second run compares against the seeded baseline; a much higher fake baseline makes it fail and is kept
+  fs.writeFileSync(baseline, JSON.stringify({ score: { value: 100 } }));
+  const second = await cli(args);
+  assert.equal(second.status, 2);
+  const s2 = JSON.parse(second.stdout.trim().split('\n').pop());
+  assert.equal(s2.baseline, 100);
+  assert.ok(s2.notes.some((n) => /Baseline kept/.test(n)));
+  assert.equal(JSON.parse(fs.readFileSync(baseline, 'utf8')).score.value, 100);
+});

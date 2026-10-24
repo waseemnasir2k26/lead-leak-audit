@@ -57,7 +57,7 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
 
   // Forms -------------------------------------------------------------
   for (const f of inventory.forms) {
-    if (f.kind === "search" || f.kind === "login") continue;
+    if (f.kind !== "contact" && f.kind !== "newsletter") continue;
     const name = `${f.kind} form (${
       f.fields
         .filter(
@@ -433,7 +433,7 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
           severity: "info",
           category: "booking",
           title: `${b.vendor} link could not be verified`,
-          detail: `${short(b.href)} answered HTTP ${r.status} to an automated request. Vendors often block bots.`,
+          detail: r.skipped ? `${short(b.href)} was not requested: ${r.error}.` : `${short(b.href)} answered HTTP ${r.status} to an automated request. Vendors often block bots.`,
           fix: "Open the link by hand to confirm it works.",
           where: b.pages,
         }),

@@ -374,42 +374,67 @@ export function isHoneypotField(f) {
   );
 }
 
-/** kind of form: contact / newsletter / search / login */
+// Forms that must NEVER be submitted: they change state on the site beyond "send an enquiry".
+const COMMENT_RE = /wp-comments-post|comment[-_]?post|commentform|comment-form|\bcomments?[-_]?form|leave[-_]?a[-_]?(?:reply|comment)/i;
+const COMMERCE_RE = /add[-_]?to[-_]?cart|add_to_cart|\/cart\b|\bcart\b|checkout|\/basket|\bbasket\b|woocommerce|\bwc-|shopify|\/orders?\b|\border[-_]?(?:now|form)\b|payment|billing|\bpay(?:ment)?[-_]?now\b|stripe|paypal|buy[-_]?now|purchase/i;
+const ACCOUNT_RE = /unsubscribe|opt[-_]?out|delete|remove[-_]?(?:account|me)|deactivate|cancel[-_]?(?:account|subscription)|lost[-_]?password|reset[-_]?password|forgot|\bpassword\b|\bregister\b|registration|sign[-_]?up\b|create[-_]?account|\/account|my-account|profile/i;
+const CARD_FIELD_RE = /card[-_]?number|cc[-_]?(?:num|number|exp|csc)|cvv|cvc|cardholder|security[-_]?code|iban|routing[-_]?number/i;
+const QTY_RE = /^(?:quantity|qty|amount|add[-_]?to[-_]?cart)$/i;
+
+function formHaystack(form) {
+  return `${form.actionAbs || ''} ${form.id || ''} ${form.name || ''} ${form.className || ''}`;
+}
+
+/**
+ * Forms that are never submitted, with the reason. Returns {kind, why} or null.
+ * Detection is by action URL, id, class and field names, and is deliberately broad.
+ */
+export function forbiddenForm(form) {
+  const f = form.fields || [];
+  const hay = formHaystack(form);
+  const names = f.map((x) => `${x.name || ''} ${x.id || ''}`).join(' ');
+  if (f.some((x) => x.type === 'password')) return { kind: 'login', why: 'login or account form (password field)' };
+  if (COMMENT_RE.test(hay) || /comment_post_id|comment_parent/i.test(names)) return { kind: 'comment', why: 'comment form: submitting would publish a public comment' };
+  if (f.some((x) => x.type === 'file')) return { kind: 'file-upload', why: 'file upload form: never submitted' };
+  if (COMMERCE_RE.test(hay) || /add-to-cart|product_id|variation_id|wc-ajax/i.test(names) || f.some((x) => CARD_FIELD_RE.test(`${x.name} ${x.id} ${x.autocomplete}`) || /^cc-/i.test(x.autocomplete || ''))) {
+    return { kind: 'commerce', why: 'cart, checkout, order or payment form: submitting would change a cart or an order' };
+  }
+  if (ACCOUNT_RE.test(hay) || /unsubscribe|delete|opt[-_]?out/i.test(names)) return { kind: 'account', why: 'unsubscribe, delete, account or registration form: submitting would change real subscriptions or accounts' };
+  const visible = f.filter((x) => x.visible && !['submit', 'button', 'hidden', 'image', 'reset', 'checkbox', 'radio'].includes(x.type));
+  if (visible.length >= 1 && visible.length <= 2 && visible.some((x) => x.type === 'number' || QTY_RE.test(x.name || '')) && !visible.some((x) => x.type === 'email' || x.type === 'tel')) {
+    return { kind: 'commerce', why: 'quantity-style form (looks like add-to-cart)' };
+  }
+  return null;
+}
+
+/** kind of form: contact / newsletter / search / login / comment / commerce / account / file-upload */
 export function classifyForm(form) {
   const f = form.fields || [];
-  if (f.some((x) => x.type === "password")) return "login";
-  const role = String(form.role || "").toLowerCase();
-  const inputs = f.filter(
-    (x) =>
-      x.visible &&
-      ![
-        "submit",
-        "button",
-        "checkbox",
-        "radio",
-        "hidden",
-        "image",
-        "reset",
-      ].includes(x.type),
-  );
-  if (
-    role === "search" ||
-    (inputs.length <= 1 &&
-      inputs.every(
-        (x) =>
-          x.type === "search" ||
-          /^(s|q|query|search|keyword|keywords)$/i.test(x.name || ""),
-      ))
-  ) {
-    if (inputs.length <= 1 && (role === "search" || inputs.length === 1))
-      return "search";
+  const bad = forbiddenForm(form);
+  if (bad) return bad.kind;
+  const role = String(form.role || '').toLowerCase();
+  const inputs = f.filter((x) => x.visible && !['submit', 'button', 'checkbox', 'radio', 'hidden', 'image', 'reset'].includes(x.type));
+  if (role === 'search' || (inputs.length <= 1 && inputs.every((x) => x.type === 'search' || /^(s|q|query|search|keyword|keywords)$/i.test(x.name || '')))) {
+    if (inputs.length <= 1 && (role === 'search' || inputs.length === 1)) return 'search';
   }
-  const hasTextarea = f.some((x) => x.tag === "textarea");
-  const hasEmail = f.some(
-    (x) => x.type === "email" || /e-?mail/i.test(x.name || ""),
-  );
-  if (!hasTextarea && hasEmail && inputs.length <= 2) return "newsletter";
-  return "contact";
+  const hasTextarea = f.some((x) => x.tag === 'textarea');
+  const hasEmail = f.some((x) => x.type === 'email' || /e-?mail/i.test(x.name || ''));
+  if (!hasTextarea && hasEmail && inputs.length <= 2) return 'newsletter';
+  return 'contact';
+}
+
+/**
+ * Allow-list for submission. A form is submittable only if it looks like an enquiry:
+ * a message or name field AND a way to reply (email or phone). Returns null when eligible,
+ * otherwise the reason it is not.
+ */
+export function leadEligibility(form) {
+  const f = (form.fields || []).filter((x) => !x.honeypot && x.visible);
+  const hasReply = f.some((x) => x.type === 'email' || x.type === 'tel' || /e-?mail|phone|mobile|whatsapp/i.test(`${x.name} ${x.id} ${x.label} ${x.placeholder}`));
+  const hasMsgOrName = f.some((x) => x.tag === 'textarea' || /name|message|comment|enquiry|inquiry|details|question|how can/i.test(`${x.name} ${x.id} ${x.label} ${x.placeholder}`));
+  if (!hasReply) return 'no email or phone field: does not look like a lead form';
+  if (!hasMsgOrName) return 'no name or message field: does not look like a lead form';
+  return null;
 }
 
 /** Stable signature so the same footer form on 15 pages counts as one form. */
@@ -422,9 +447,9 @@ export function formSignature(form) {
   return `${(form.method || "get").toLowerCase()} ${form.actionAbs || ""} ${names}`;
 }
 
+/** Host comparison key: lowercase, no leading www., default ports dropped, other ports kept. */
 export function hostKey(host) {
-  return String(host || "")
-    .toLowerCase()
-    .replace(/:\d+$/, "")
-    .replace(/^www\./, "");
+  let h = String(host || '').toLowerCase().trim().replace(/^www\./, '');
+  h = h.replace(/:(?:80|443)$/, '');
+  return h;
 }

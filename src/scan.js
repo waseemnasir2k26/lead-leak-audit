@@ -7,7 +7,7 @@ import { deriveFindings } from "./findings.js";
 import { computeScore } from "./score.js";
 import { fetchRobots, checkLink, checkMx, USER_AGENT } from "./net.js";
 
-export const VERSION = "1.0.0";
+export const VERSION = "1.0.1";
 const SKIP_EXT =
   /\.(?:pdf|jpe?g|png|gif|webp|svg|ico|zip|rar|7z|mp4|mov|mp3|wav|css|js|json|xml|txt|docx?|xlsx?|pptx?|woff2?|ttf)(?:[?#]|$)/i;
 const PRIORITY =
@@ -202,7 +202,7 @@ export async function scan(startUrl, opts = {}) {
         .map((w) => w.href),
       ...inventory.booking.filter((b) => !b.embedded).map((b) => b.href),
     ];
-    const results = await pool(urls, 4, (u) => checkLink(u, { fetchImpl }));
+    const results = await pool(urls, 4, (u) => checkLink(u, { fetchImpl, allowHost: start.host }));
     urls.forEach((u, i) => {
       checks.links[u] = results[i];
     });
@@ -229,7 +229,8 @@ export async function scan(startUrl, opts = {}) {
             f.actionAttr &&
             f.actionAttr !== "#" &&
             !/^javascript:/i.test(f.actionAttr) &&
-            /^https?:/i.test(f.actionAbs),
+            /^https?:/i.test(f.actionAbs) &&
+            hostKey(new URL(f.actionAbs).host) === hostKey(start.host), // never probe other hosts
         )
         .map((f) => f.actionAbs),
     ),
@@ -238,7 +239,7 @@ export async function scan(startUrl, opts = {}) {
     try {
       const res = await fetchImpl(u, {
         method: "HEAD",
-        redirect: "follow",
+        redirect: "manual",
         headers: { "user-agent": USER_AGENT },
         signal: AbortSignal.timeout(10000),
       });

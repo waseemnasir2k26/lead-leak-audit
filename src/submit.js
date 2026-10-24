@@ -5,6 +5,8 @@ import {
   CHAT_VENDORS,
   detectCaptcha,
   hostKey,
+  forbiddenForm,
+  leadEligibility,
   isHoneypotField,
   classifyForm,
   formSignature,
@@ -253,7 +255,7 @@ export function classifyOutcome({
   if (!relevant.length && blockedForeign.length) {
     return {
       status: "skipped",
-      detail: `The form tried to send data to a host outside the allowed list (${[...new Set(blockedForeign)].slice(0, 3).join(", ")}); the request was blocked. Add that host with --allow-domain if it is yours.`,
+      detail: `blocked: foreign host (${[...new Set(blockedForeign)].slice(0, 3).join(", ")}). The form tried to send data or navigate to a host outside the allowed list; the request was aborted in the browser and nothing reached that host. Add the host with --allow-domain only if it is yours.`,
       evidence,
     };
   }
@@ -368,97 +370,64 @@ function formLabel(f) {
   return `${f.kind}${names ? " (" + names + ")" : ""}`;
 }
 
+const NEVER_REASON = {
+  comment: 'comment form: submitting would publish a public comment',
+  commerce: 'cart, checkout, order or payment form: never submitted',
+  account: 'unsubscribe, delete, account or registration form: never submitted',
+  'file-upload': 'file upload form: never submitted',
+  login: 'login form: never submitted',
+  search: 'search form: never submitted',
+};
+
+/** --only matcher: a 1-based form number, #id, .class, or a substring of the form action / id / name. */
+export function matchesOnly(form, index, only) {
+  if (!only || !only.length) return true;
+  return only.some((o) => {
+    const t = String(o).trim();
+    if (/^\d+$/.test(t)) return Number(t) === index;
+    if (t.startsWith('#')) return form.id === t.slice(1);
+    if (t.startsWith('.')) return String(form.className || '').split(/\s+/).includes(t.slice(1));
+    return [form.actionAbs, form.id, form.name].some((v) => v && String(v).includes(t));
+  });
+}
+
 /**
- * Plan every submission (no network). Applies caps, kind filter and domain rail per form.
+ * Plan every submission (no network). Allow-list: only enquiry-style forms are ever planned.
+ * Applies kind, newsletter, --only, robots, CAPTCHA, domain and cap rules, in that order.
  */
-export function planSubmissions(
-  inventory,
-  { email, allowed, maxForms = HARD_MAX_FORMS, rand },
-) {
+export function planSubmissions(inventory, { email, allowed, maxForms = HARD_MAX_FORMS, rand, includeNewsletter = false, only = [], robots = null }) {
   const cap = Math.min(Math.max(1, maxForms), HARD_MAX_FORMS);
-  const eligible = inventory.forms
-    .filter((f) => f.kind === "contact" || f.kind === "newsletter")
-    .sort(
-      (a, b) => (a.kind === "contact" ? 0 : 1) - (b.kind === "contact" ? 0 : 1),
-    );
-  const others = inventory.forms.filter((f) => !eligible.includes(f));
+  const indexed = inventory.forms.map((f, k) => ({ f, index: k + 1 }));
+  indexed.sort((a, b) => (a.f.kind === 'contact' ? 0 : 1) - (b.f.kind === 'contact' ? 0 : 1) || a.index - b.index);
   const results = [];
   let used = 0;
-  for (const f of eligible) {
-    const base = {
-      sig: f.sig,
-      label: formLabel(f),
-      page: f.firstPage,
-      kind: f.kind,
-      action: f.actionAbs,
-    };
-    let actionHost = "";
-    try {
-      actionHost = new URL(f.actionAbs).host;
-    } catch {
-      /* handled below */
-    }
-    if (used >= cap) {
-      results.push({
-        ...base,
-        status: "skipped",
-        reason: `Over the ${cap}-form cap for one run; run again to test the rest.`,
-      });
-      continue;
-    }
-    if (f.captcha.present) {
-      results.push({
-        ...base,
-        status: "blocked-captcha",
-        captcha: f.captcha.kind,
-        reason: "Blocked by CAPTCHA, test manually.",
-      });
-      continue;
-    }
+  for (const { f, index } of indexed) {
+    const base = { sig: f.sig, index, label: formLabel(f), page: f.firstPage, kind: f.kind, action: f.actionAbs };
+    const skip = (reason, status = 'skipped') => results.push({ ...base, status, reason });
+    const bad = forbiddenForm(f);
+    if (bad) { skip(bad.why); continue; }
+    if (f.kind !== 'contact' && f.kind !== 'newsletter') { skip(NEVER_REASON[f.kind] || `${f.kind} form: never submitted`); continue; }
+    if (f.kind === 'newsletter' && !includeNewsletter) { skip('newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.'); continue; }
+    if (!matchesOnly(f, index, only)) { skip('not selected by --only'); continue; }
+    const why = leadEligibility(f);
+    if (f.kind === 'contact' && why) { skip(why); continue; }
+    let pageUrl = null;
+    try { pageUrl = new URL(f.firstPage); } catch { /* handled below */ }
+    if (robots && pageUrl && !robots.isAllowed(pageUrl.pathname + pageUrl.search)) { skip('robots.txt disallows this page, so it is not visited or submitted'); continue; }
+    if (used >= cap) { skip(`Over the ${cap}-form cap for one run; run again to test the rest.`); continue; }
+    if (f.captcha.present) { results.push({ ...base, status: 'blocked-captcha', captcha: f.captcha.kind, reason: 'Blocked by CAPTCHA, test manually.' }); continue; }
+    let actionHost = '';
+    try { actionHost = new URL(f.actionAbs).host; } catch { /* no usable action */ }
     if (actionHost && !isHostAllowed(actionHost, allowed)) {
-      results.push({
-        ...base,
-        status: "skipped",
-        reason: `Form action posts to ${actionHost}, which is not the audited host or in --allow-domain. Not submitted.`,
-      });
+      skip(`blocked: foreign host. The form action posts to ${actionHost}, which is not the audited host or in --allow-domain. Not submitted.`);
       continue;
     }
-    let pageHost = "";
-    try {
-      pageHost = new URL(f.firstPage).host;
-    } catch {
-      /* ignore */
-    }
-    if (pageHost && !isHostAllowed(pageHost, allowed)) {
-      results.push({
-        ...base,
-        status: "skipped",
-        reason: `Page host ${pageHost} is not allowed.`,
-      });
-      continue;
-    }
+    if (pageUrl && !isHostAllowed(pageUrl.host, allowed)) { skip(`blocked: foreign host. Page host ${pageUrl.host} is not allowed.`); continue; }
     used += 1; // exactly one slot per distinct form
     const leadId = newLeadId(rand);
-    results.push({
-      ...base,
-      status: "planned",
-      leadId,
-      plan: planForm(f, { email, leadId }),
-      form: f,
-    });
+    results.push({ ...base, status: 'planned', leadId, plan: planForm(f, { email, leadId }), form: f });
   }
-  for (const f of others) {
-    results.push({
-      sig: f.sig,
-      label: formLabel(f),
-      page: f.firstPage,
-      kind: f.kind,
-      action: f.actionAbs,
-      status: "skipped",
-      reason: `${f.kind} form: never submitted.`,
-    });
-  }
-  return results;
+  return results.sort((a, b) => a.index - b.index);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -712,6 +681,8 @@ function strip(item) {
 
 export function summarizePlan(planned) {
   return planned.map((p) => ({
+    index: p.index,
+    kind: p.kind,
     form: p.label,
     page: p.page,
     status: p.status === "planned" ? "would-submit" : p.status,

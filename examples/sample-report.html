@@ -38,14 +38,14 @@ footer a{color:#1d4ed8}
 <body>
 <main>
 <h1>Lead leak report</h1>
-<p class="dim"><code>http://127.0.0.1:4173/</code> · submit mode · 2026-10-24 09:37 UTC · 6 page(s) scanned</p>
+<p class="dim"><code>http://127.0.0.1:4173/</code> · submit mode · 2026-10-24 17:53 UTC · 7 page(s) scanned</p>
 
 <section class="hero">
   <div class="ring"><div><b>23</b><span>of 100</span></div></div>
   <div style="flex:1;min-width:220px">
     <h2 style="margin:0">Lead survival score: Critical</h2>
     <p class="dim" style="margin:4px 0 0">100 minus penalties per leak (critical -25, high -15, medium -8, low -3). Each area loses at most 40 points. Notes cost nothing. </p>
-    <div class="pills"><span class="pill" style="--c:#b91c1c">critical 1</span><span class="pill" style="--c:#c2410c">high 2</span><span class="pill" style="--c:#b45309">medium 2</span><span class="pill" style="--c:#4b5563">low 2</span><span class="pill" style="--c:#1d4ed8">info 3</span></div>
+    <div class="pills"><span class="pill" style="--c:#b91c1c">critical 1</span><span class="pill" style="--c:#c2410c">high 2</span><span class="pill" style="--c:#b45309">medium 2</span><span class="pill" style="--c:#4b5563">low 2</span><span class="pill" style="--c:#1d4ed8">info 9</span></div>
   </div>
 </section>
 
@@ -117,6 +117,48 @@ footer a{color:#1d4ed8}
   <p class="where">Evidence: <code>POST /api/missing -&gt; 404</code></p>
 </article>
 <article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form comment (author/email/comment): not submitted</h3></header>
+  <p>comment form: submitting would publish a public comment</p>
+  <p class="fix"><strong>Fix:</strong> Nothing to do unless this is a lead form; then adjust --allow-domain or test it by hand.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/risky.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form commerce (quantity): not submitted</h3></header>
+  <p>cart, checkout, order or payment form: submitting would change a cart or an order</p>
+  <p class="fix"><strong>Fix:</strong> Nothing to do unless this is a lead form; then adjust --allow-domain or test it by hand.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/risky.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form account (email): not submitted</h3></header>
+  <p>unsubscribe, delete, account or registration form: submitting would change real subscriptions or accounts</p>
+  <p class="fix"><strong>Fix:</strong> Nothing to do unless this is a lead form; then adjust --allow-domain or test it by hand.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/risky.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form account (name/email/message): not submitted</h3></header>
+  <p>unsubscribe, delete, account or registration form: submitting would change real subscriptions or accounts</p>
+  <p class="fix"><strong>Fix:</strong> Nothing to do unless this is a lead form; then adjust --allow-domain or test it by hand.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/risky.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form file-upload (name/email/cv): not submitted</h3></header>
+  <p>file upload form: never submitted</p>
+  <p class="fix"><strong>Fix:</strong> Nothing to do unless this is a lead form; then adjust --allow-domain or test it by hand.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/risky.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form newsletter (email): not submitted</h3></header>
+  <p>newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.</p>
+  <p class="fix"><strong>Fix:</strong> Nothing to do unless this is a lead form; then adjust --allow-domain or test it by hand.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/risky.html</code></p>
+  
+</article>
+<article class="leak" style="--c:#1d4ed8">
   <header><span class="sev">info</span><h3>form contact (email/message): blocked by CAPTCHA, test manually</h3></header>
   <p>reCAPTCHA is present. The audit never solves or bypasses CAPTCHAs.</p>
   <p class="fix"><strong>Fix:</strong> Submit this form by hand and confirm the lead arrives and the auto-reply fires.</p>
@@ -124,11 +166,11 @@ footer a{color:#1d4ed8}
   
 </article>
 
-<h2>Test submissions</h2><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody><tr><td>contact (name/email/phone)</td><td><span class="st st-delivered">delivered</span></td><td>Accepted (HTTP 200) and the visitor saw a confirmation on /thanks.html.</td></tr><tr><td>contact (fullname/email/details)</td><td><span class="st st-failed">failed</span></td><td>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</td></tr><tr><td>contact (email/message)</td><td><span class="st st-blocked-captcha">blocked-captcha</span></td><td>Blocked by CAPTCHA, test manually.</td></tr></tbody></table></div>
+<h2>Test submissions</h2><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody><tr><td>contact (name/email/phone)</td><td><span class="st st-delivered">delivered</span></td><td>Accepted (HTTP 200) and the visitor saw a confirmation on /thanks.html.</td></tr><tr><td>contact (fullname/email/details)</td><td><span class="st st-failed">failed</span></td><td>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</td></tr><tr><td>comment (author/email/comment)</td><td><span class="st st-skipped">skipped</span></td><td>comment form: submitting would publish a public comment</td></tr><tr><td>commerce (quantity)</td><td><span class="st st-skipped">skipped</span></td><td>cart, checkout, order or payment form: submitting would change a cart or an order</td></tr><tr><td>account (email)</td><td><span class="st st-skipped">skipped</span></td><td>unsubscribe, delete, account or registration form: submitting would change real subscriptions or accounts</td></tr><tr><td>account (name/email/message)</td><td><span class="st st-skipped">skipped</span></td><td>unsubscribe, delete, account or registration form: submitting would change real subscriptions or accounts</td></tr><tr><td>file-upload (name/email/cv)</td><td><span class="st st-skipped">skipped</span></td><td>file upload form: never submitted</td></tr><tr><td>newsletter (email)</td><td><span class="st st-skipped">skipped</span></td><td>newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.</td></tr><tr><td>contact (email/message)</td><td><span class="st st-blocked-captcha">blocked-captcha</span></td><td>Blocked by CAPTCHA, test manually.</td></tr></tbody></table></div>
 <p class="dim">Reply timing was not measured (no IMAP access configured).</p>
 
 <h2>What was found</h2>
-<div class="scroll"><table><thead><tr><th>Form</th><th>Sends to</th><th>Fields</th><th>CAPTCHA</th><th>Honeypot</th></tr></thead><tbody><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/lead</code></td><td>3 required</td><td>none</td><td>yes (1)</td></tr><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/missing</code></td><td>2 required</td><td>none</td><td>no</td></tr><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/lead</code></td><td>2 required</td><td>reCAPTCHA</td><td>no</td></tr></tbody></table></div>
+<div class="scroll"><table><thead><tr><th>Form</th><th>Sends to</th><th>Fields</th><th>CAPTCHA</th><th>Honeypot</th></tr></thead><tbody><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/lead</code></td><td>3 required</td><td>none</td><td>yes (1)</td></tr><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/missing</code></td><td>2 required</td><td>none</td><td>no</td></tr><tr><td>comment</td><td><code>POST http://127.0.0.1:4173/wp-comments-post.php</code></td><td>0 required</td><td>none</td><td>no</td></tr><tr><td>commerce</td><td><code>POST http://127.0.0.1:4173/cart/add</code></td><td>0 required</td><td>none</td><td>no</td></tr><tr><td>account</td><td><code>POST http://127.0.0.1:4173/unsubscribe</code></td><td>0 required</td><td>none</td><td>no</td></tr><tr><td>account</td><td><code>POST http://127.0.0.1:4173/account/delete</code></td><td>0 required</td><td>none</td><td>no</td></tr><tr><td>file-upload</td><td><code>POST http://127.0.0.1:4173/api/upload</code></td><td>0 required</td><td>none</td><td>no</td></tr><tr><td>newsletter</td><td><code>POST http://127.0.0.1:4173/subscribe</code></td><td>0 required</td><td>none</td><td>no</td></tr><tr><td>contact</td><td><code>POST http://127.0.0.1:4173/api/lead</code></td><td>2 required</td><td>reCAPTCHA</td><td>no</td></tr></tbody></table></div>
 <br><div class="scroll"><table><thead><tr><th>Type</th><th>Target</th><th>Status</th></tr></thead><tbody><tr><td>email</td><td class="break"><code>mailto:hello@demo-plumbing.test</code></td><td>ok</td></tr><tr><td>phone</td><td class="break"><code>tel:+14155552671</code></td><td>ok (E.164)</td></tr><tr><td>phone</td><td class="break"><code>tel:(0800) 123 456</code></td><td>not-international</td></tr><tr><td>WhatsApp</td><td class="break"><code>https://wa.me/+0123abc?text=Hello</code></td><td>non-numeric, prefilled, not checked</td></tr><tr><td>WhatsApp</td><td class="break"><code>https://wa.me/14155552671</code></td><td>format ok, no prefill, not checked</td></tr><tr><td>chat</td><td class="break"><code>Crisp</code></td><td>rendered</td></tr><tr><td>chat</td><td class="break"><code>Tidio</code></td><td>not rendered</td></tr></tbody></table></div>
 
 <footer>

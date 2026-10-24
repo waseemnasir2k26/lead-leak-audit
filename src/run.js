@@ -1,5 +1,6 @@
 // High-level entry points used by the CLI, the demo and the integration tests.
 import fs from "node:fs";
+import { fetchRobots } from "./net.js";
 import { scan, rescore, launchBrowser, normalizeUrl } from "./scan.js";
 import {
   checkRails,
@@ -37,6 +38,8 @@ export async function runSubmit(url, opts = {}) {
     imapClientFactory = createImapClient,
     pollMs,
     rand,
+    includeNewsletter = false,
+    only = [],
   } = opts;
   const { allowed } = checkRails({ url, iOwn, email, allowDomains }); // throws RailError
   let imapCfg = null;
@@ -51,11 +54,15 @@ export async function runSubmit(url, opts = {}) {
   try {
     const result = await scan(normalizeUrl(url).href, { ...opts, browser });
     result.meta.mode = dryRun ? "dry-run" : "submit";
+    const robots = await fetchRobots(result.meta.origin);
     const planned = planSubmissions(result.inventory, {
       email,
       allowed,
       maxForms,
       rand,
+      includeNewsletter,
+      only,
+      robots,
     });
     if (dryRun) {
       return {
@@ -126,10 +133,31 @@ export async function runSubmit(url, opts = {}) {
   }
 }
 
-/** Compare against a previous report.json (n8n / cron use). */
+/**
+ * Read the score from a previous report.json. A missing or unreadable file is "no baseline yet",
+ * never an error: the first scheduled run must not fail.
+ * @returns {{found:boolean, score:number|null, note:string|null}}
+ */
+export function readBaseline(file) {
+  let text;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT" || e.code === "ENOTDIR") return { found: false, score: null, note: `No baseline yet at ${file}; the drop check is skipped this run.` };
+    return { found: false, score: null, note: `Baseline ${file} could not be read (${e.code || e.message}); the drop check is skipped.` };
+  }
+  try {
+    const j = JSON.parse(text);
+    if (typeof j?.score?.value === "number") return { found: true, score: j.score.value, note: null };
+  } catch {
+    /* fall through */
+  }
+  return { found: false, score: null, note: `Baseline ${file} is not a lead-leak-audit report; the drop check is skipped.` };
+}
+
+/** Back-compat helper: the score, or null when there is no usable baseline. */
 export function readBaselineScore(file) {
-  const j = JSON.parse(fs.readFileSync(file, "utf8"));
-  return typeof j?.score?.value === "number" ? j.score.value : null;
+  return readBaseline(file).score;
 }
 
 export function ciVerdict({ score, threshold, baseline = null, maxDrop = 10 }) {

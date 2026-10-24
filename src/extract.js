@@ -139,6 +139,7 @@ export function extractPage(opts) {
       return {
         formIndex,
         id: form.id || "",
+        className: String(form.className || "").slice(0, 200),
         name: form.getAttribute("name") || "",
         role: form.getAttribute("role") || "",
         method: (form.getAttribute("method") || "get").toLowerCase(),

@@ -16,14 +16,10 @@
 2. Import `examples/n8n-weekly-check.json` (Workflows, Import from file).
 3. In the "Run lead-leak-audit" node, replace `https://your-site.example` and adjust `--threshold`.
 4. In "Email me", pick your SMTP credential and set the from/to addresses.
-5. Run it once by hand. The first run copies its report to `reports/baseline/report.json`. Later runs fail if the score is below the threshold **or** has dropped more than 10 points against that baseline (`--max-drop` changes the 10).
+5. Run it once by hand. With no baseline yet, the CLI prints a note, skips the drop check and (because of `--update-baseline`) saves its report as `reports/baseline/report.json`. Later runs fail if the score is below the threshold **or** has dropped more than 10 points against that baseline (`--max-drop` changes the 10). A passing run moves the baseline forward; a failing run leaves it alone so the regression stays visible.
 6. Activate the workflow.
 
-When you fix leaks on purpose, refresh the baseline:
-
-```bash
-cp reports/latest/report.json reports/baseline/report.json
-```
+To reset the baseline on purpose, delete `reports/baseline/report.json`; the next run recreates it.
 
 ## How the check decides
 
@@ -32,7 +28,8 @@ cp reports/latest/report.json reports/baseline/report.json
 | `--ci`                     | exit code 2 when the check fails (otherwise always 0)                                       |
 | `--threshold 75`           | fail below this score                                                                       |
 | `--baseline <report.json>` | fail if the score fell by more than `--max-drop` since that report                          |
-| `--json`                   | print one JSON line (`score`, `grade`, `pass`, `reasons`, `html`, `json`) for the Code node |
+| `--update-baseline`         | write the report to the `--baseline` path when it is missing or the run passed (no `cp` step needed) |
+| `--json`                   | print one JSON line (`score`, `grade`, `pass`, `reasons`, `baseline`, `notes`, `html`, `json`) for the Code node |
 
 The Code node reads that last JSON line, so the workflow works even if the process exit code is swallowed.
 

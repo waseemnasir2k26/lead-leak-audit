@@ -1,6 +1,6 @@
 {
   "name": "lead-leak-audit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Free local CLI that audits your own website's lead path (forms, auto-replies, WhatsApp links, chat widgets, booking links) and scores where leads die.",
   "type": "module",
   "main": "src/index.js",

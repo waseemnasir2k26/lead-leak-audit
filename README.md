@@ -8,9 +8,31 @@
 
 A free, local Node CLI that audits your own site's lead path and writes a shareable HTML + JSON report with a 0-100 lead survival score. Nothing is uploaded anywhere.
 
+![npm run demo](docs/demo.gif)
+
 ![Sample report](docs/sample-report.png)
 
-Open the full [sample report](examples/sample-report.html) (generated from the fixture site in `examples/demo-site`, which is broken on purpose).
+Open the full [sample report](examples/sample-report.html) (generated from the fixture site in `examples/demo-site`, which is broken on purpose). A [full-page PNG](docs/sample-report-full.png) and a [phone-width PNG](docs/sample-report-mobile.png) are in `docs/`.
+
+Zero install (needs Node 20+ and a one-time `npx playwright install chromium`):
+
+```bash
+npx github:waseemnasir2k26/lead-leak-audit scan https://your-site.example
+```
+
+## What it will never touch
+
+`scan` is read-only. `submit` only ever sends a clearly marked test enquiry through a plain contact form, and it will never submit:
+
+- comment forms (WordPress `wp-comments-post`, anything with `comment_post_ID`)
+- cart, checkout, order or payment forms, add-to-cart buttons, quantity inputs, card fields
+- unsubscribe, delete, account, register or password-reset forms
+- login forms, search forms, and anything with a file upload
+- newsletter forms (unless you pass `--include-newsletter`, because that subscribes your test inbox)
+- CAPTCHA-protected forms (listed for manual testing, never solved or bypassed)
+- any form that posts to a host you did not allow, and any page `robots.txt` disallows
+
+Only forms that look like an enquiry (a name or message field plus an email or phone field) are eligible. `--dry-run` lists every form with the reason it would or would not be submitted.
 
 ## What it finds
 
@@ -58,13 +80,14 @@ Requires Node 20+. `imapflow` is an optional dependency, only used by `--imap`.
 
 - Refuses to run without `--i-own-this-site` (and without `--email`).
 - Only touches the audited host plus hosts you list with `--allow-domain`. A form that posts to another domain is skipped; any non-GET request to an unlisted host is blocked in the browser.
-- At most one submission per distinct form per run, at most 10 forms per run. Search and login forms are never submitted.
+- At most one submission per distinct form per run, at most 10 forms per run. Only enquiry-style forms are submitted (see "What it will never touch"); newsletter forms need `--include-newsletter`; `--only <n|#id|.class|text>` limits a run to chosen forms.
 - If a CAPTCHA is present, the form is marked "blocked by CAPTCHA, test manually". The tool never tries to solve or bypass one.
 - Test leads are marked: name `LEAD-LEAK-AUDIT TEST`, a message saying it is an automated test of your own site, and a unique test ID. Honeypot fields stay empty.
 - `--dry-run` prints exactly what would be filled and sends nothing.
 - WhatsApp is never contacted by design: links are validated and fetched, nothing more.
 - IMAP details come from env vars only (never CLI arguments), are never logged, and are redacted from every report. The test inbox address is masked in the report.
-- `scan` honours `robots.txt`.
+- Both `scan` and `submit` honour `robots.txt` for the pages they visit. Form actions are only probed on the scanned host; WhatsApp and booking links are never fetched at private, loopback or link-local addresses (unless the scanned site itself is on one).
+- Any cross-origin navigation or non-GET request that a form triggers (including one created by page JavaScript) is aborted in the browser and reported as "blocked: foreign host".
 
 Exit codes: `0` ok, `1` error, `2` CI check failed, `3` refused by a safety rail.
 
@@ -87,15 +110,16 @@ Use a test inbox that is different from the address your site notifies, or the n
 
 ## Weekly check in n8n
 
-`--ci --threshold 75` exits with code 2 when the score is too low; `--baseline` also fails on a drop versus the last report. [examples/n8n-weekly-check.json](examples/n8n-weekly-check.json) wires that to a Monday schedule and an email. Setup: [docs/n8n.md](docs/n8n.md).
+`--ci --threshold 75` exits with code 2 when the score is too low; `--baseline` also fails on a drop versus the last report (a missing baseline is just "no baseline yet"; `--update-baseline` creates and advances it). [examples/n8n-weekly-check.json](examples/n8n-weekly-check.json) wires that to a Monday schedule and an email. Setup: [docs/n8n.md](docs/n8n.md).
 
 ## Options
 
 ```
 lead-leak-audit scan <url>   [--max-pages 15] [--out dir] [--settle ms] [--no-link-check] [--no-mx-check] [--json] [--quiet]
 lead-leak-audit submit <url> --i-own-this-site --email <inbox> [--allow-domain host] [--max-forms 10]
-                             [--dry-run] [--imap] [--wait 15]
-CI: [--ci] [--threshold 70] [--baseline report.json] [--max-drop 10]
+                             [--dry-run] [--only n|#id|.class|text] [--include-newsletter] [--imap] [--wait 15]
+CI: [--ci] [--threshold 70] [--baseline report.json] [--update-baseline] [--max-drop 10]
+Both: [--open]  open report.html when done
 ```
 
 ## Limits

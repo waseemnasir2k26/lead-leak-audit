@@ -12,10 +12,13 @@ const TYPES = {
   ".js": "text/javascript; charset=utf-8",
 };
 
+const STATE_CHANGING = ["/wp-comments-post.php", "/cart/add", "/unsubscribe", "/subscribe", "/api/upload", "/account/delete"];
+
 const CRISP_STUB =
   "(function(){var d=document.createElement('div');d.className='crisp-client';d.style.cssText='position:fixed;right:12px;bottom:12px;width:56px;height:56px;border-radius:50%;background:#1972f5';(document.body||document.documentElement).appendChild(d)})();";
 
-export function startDemoServer({ port = 0, host = "127.0.0.1" } = {}) {
+export function startDemoServer({ port = 0, host = "127.0.0.1", foreign = "http://foreign.invalid" } = {}) {
+  const hits = []; // POSTs to endpoints an audit must never reach
   const leads = [];
   const requests = [];
   const server = http.createServer((req, res) => {
@@ -24,6 +27,11 @@ export function startDemoServer({ port = 0, host = "127.0.0.1" } = {}) {
     if (url.pathname === "/robots.txt") {
       res.writeHead(200, { "content-type": "text/plain" });
       return res.end("User-agent: *\nDisallow: /private/\n");
+    }
+    if (STATE_CHANGING.includes(url.pathname)) {
+      if (req.method !== "POST") { res.writeHead(405, { allow: "POST" }); return res.end(); }
+      hits.push(url.pathname);
+      res.writeHead(200); return res.end("ok");
     }
     if (url.pathname === "/api/lead") {
       if (req.method !== "POST") {
@@ -66,6 +74,9 @@ export function startDemoServer({ port = 0, host = "127.0.0.1" } = {}) {
       "content-type": TYPES[path.extname(file)] || "application/octet-stream",
     });
     if (req.method === "HEAD") return res.end();
+    if (path.extname(file) === ".html") {
+      return res.end(fs.readFileSync(file, "utf8").replaceAll("__FOREIGN__", foreign));
+    }
     fs.createReadStream(file).pipe(res);
   });
   return new Promise((resolve, reject) => {
@@ -76,6 +87,7 @@ export function startDemoServer({ port = 0, host = "127.0.0.1" } = {}) {
         server,
         url: `http://${host}:${p}/`,
         leads,
+        hits,
         requests,
         close: () => new Promise((r) => server.close(r)),
       });

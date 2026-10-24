@@ -2,13 +2,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { parseArgs } from "node:util";
 import { createRequire } from "node:module";
 import {
   runScan,
   runSubmit,
   writeReports,
-  readBaselineScore,
+  readBaseline,
   ciVerdict,
 } from "./run.js";
 import { RailError } from "./submit.js";
@@ -30,6 +31,7 @@ Scan (read-only, never submits anything)
   --settle <ms>          wait after load for widgets to render (default 2500)
   --no-link-check        do not request WhatsApp / booking links
   --no-mx-check          do not look up MX records for mailto domains
+  --open                 open report.html in your browser when done
   --json                 print a one-line JSON summary to stdout (for n8n / cron)
   --quiet                no progress output
 
@@ -39,6 +41,8 @@ Submit (sends ONE clearly marked test lead per distinct form; only on sites you 
   --allow-domain <host>  extra host the forms may post to (repeatable, or comma separated)
   --max-forms <n>        forms per run, hard maximum 10
   --dry-run              show what would be filled; submits nothing
+  --only <n|#id|.class|text>  submit only the matching form(s); n is the form number from --dry-run (repeatable)
+  --include-newsletter   also submit newsletter forms (this subscribes the test inbox; skipped by default)
   --imap                 measure time-to-first-reply (env: LLA_IMAP_HOST, LLA_IMAP_USER, LLA_IMAP_PASS)
   --wait <minutes>       how long to wait for replies (default 15)
 
@@ -46,6 +50,7 @@ CI
   --ci                   exit with code 2 when the check fails
   --threshold <0-100>    minimum score (default 70 with --ci)
   --baseline <report.json>  also fail if the score dropped more than --max-drop
+  --update-baseline      write this report to the --baseline path when it is missing or the run passed
   --max-drop <n>         allowed drop versus the baseline (default 10)
 
 Exit codes: 0 ok, 1 error, 2 CI check failed, 3 refused by a safety rail.
@@ -66,11 +71,15 @@ const options = {
   "allow-domain": { type: "string", multiple: true },
   "max-forms": { type: "string" },
   "dry-run": { type: "boolean" },
+  "include-newsletter": { type: "boolean" },
+  only: { type: "string", multiple: true },
+  open: { type: "boolean" },
   imap: { type: "boolean" },
   wait: { type: "string" },
   ci: { type: "boolean" },
   threshold: { type: "string" },
   baseline: { type: "string" },
+  "update-baseline": { type: "boolean" },
   "max-drop": { type: "string" },
   headed: { type: "boolean" },
   help: { type: "boolean", short: "h" },
@@ -83,6 +92,16 @@ function num(v, name, def, { min = 0, max = Infinity } = {}) {
   if (!Number.isFinite(n) || n < min || n > max)
     throw new Error(`--${name} must be a number between ${min} and ${max}`);
   return n;
+}
+
+/** Open a file with the OS default app. Best effort, never throws. */
+function openFile(file) {
+  try {
+    const cmd = process.platform === "win32" ? ["cmd", ["/c", "start", '""', file]] : process.platform === "darwin" ? ["open", [file]] : ["xdg-open", [file]];
+    spawn(cmd[0], cmd[1], { detached: true, stdio: "ignore", shell: false, windowsVerbatimArguments: process.platform === "win32" }).unref();
+  } catch {
+    /* ignore: the path is printed anyway */
+  }
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -137,6 +156,8 @@ export async function main(argv = process.argv.slice(2)) {
         email: v.email,
         allowDomains,
         dryRun: !!v["dry-run"],
+        includeNewsletter: !!v["include-newsletter"],
+        only: v.only || [],
         maxForms: num(v["max-forms"], "max-forms", 10, { min: 1, max: 10 }),
         imap: !!v.imap,
         waitMinutes: num(v.wait, "wait", 15, { min: 1, max: 240 }),
@@ -151,7 +172,7 @@ export async function main(argv = process.argv.slice(2)) {
         console.log("DRY RUN: nothing was submitted. Planned test leads:\n");
         for (const p of extra.plan) {
           console.log(
-            `- ${p.form} on ${p.page}: ${p.status}${p.reason ? " (" + p.reason + ")" : ""}`,
+            `- #${p.index} ${p.form} on ${p.page}: ${p.status}${p.reason ? " (" + p.reason + ")" : ""}`,
           );
           for (const f of p.fields)
             console.log(
@@ -165,19 +186,33 @@ export async function main(argv = process.argv.slice(2)) {
     }
 
     const { report, htmlPath, jsonPath } = writeReports(result, outDir, extra);
+    if (v.open) openFile(htmlPath);
     const threshold =
       v.ci || v.threshold !== undefined
         ? num(v.threshold, "threshold", 70, { min: 0, max: 100 })
         : null;
-    const baseline = v.baseline
-      ? readBaselineScore(path.resolve(v.baseline))
-      : null;
+    const bl = v.baseline ? readBaseline(path.resolve(v.baseline)) : null;
+    const baseline = bl ? bl.score : null;
+    const notes = bl?.note ? [bl.note] : [];
     const verdict = ciVerdict({
       score: report.score.value,
       threshold,
       baseline,
       maxDrop: num(v["max-drop"], "max-drop", 10, { min: 0, max: 100 }),
     });
+
+    if (v["update-baseline"]) {
+      if (!v.baseline) throw new Error("--update-baseline needs --baseline <report.json> (the file to write).");
+      // Seed when missing; otherwise only move the baseline forward on a passing run, so a regression stays visible.
+      if (!bl.found || verdict.pass) {
+        const dest = path.resolve(v.baseline);
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        fs.copyFileSync(jsonPath, dest);
+        notes.push(`Baseline ${bl.found ? "updated" : "created"}: ${dest}`);
+      } else {
+        notes.push("Baseline kept (this run failed the check).");
+      }
+    }
 
     if (v.json) {
       console.log(
@@ -188,6 +223,8 @@ export async function main(argv = process.argv.slice(2)) {
           bySeverity: report.score.bySeverity,
           pass: verdict.pass,
           reasons: verdict.reasons,
+          baseline,
+          notes,
           html: htmlPath,
           json: jsonPath,
         }),
