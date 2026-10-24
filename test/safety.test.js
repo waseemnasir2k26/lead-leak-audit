@@ -35,6 +35,7 @@ const name = fld({ name: "name" });
 const msg = fld({ tag: "textarea", type: "textarea", name: "message" });
 const form = (o = {}) => ({
   sig: "s" + Math.random(),
+  heading: "Contact us",
   kind: "contact",
   actionAbs: "https://acme.test/send",
   id: "",
@@ -160,7 +161,7 @@ test("a normal contact form is still planned", () => {
 test("allow-list: positive signals plus a reply channel are required", () => {
   assert.match(leadEligibility({ fields: [name, msg] }), /no email or phone/);
   assert.match(leadEligibility({ fields: [email, fld({ name: "zip" })] }), /newsletter|no positive/);
-  assert.equal(leadEligibility({ fields: [fld({ type: "tel", name: "phone" }), name, msg] }), null);
+  assert.equal(leadEligibility({ heading: "Contact us", fields: [fld({ type: "tel", name: "phone" }), name, msg] }), null);
   const [r] = plan([form({ fields: [fld({ name: "zip" }), fld({ name: "city" })] })]);
   assert.equal(r.status, "skipped");
   assert.match(r.reason, /no email or phone/);

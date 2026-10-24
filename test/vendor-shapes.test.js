@@ -12,6 +12,7 @@ import {
 
 let site;
 const OPTS = {
+  dwellMs: 0,
   iOwn: true,
   email: "qa@example.test",
   linkCheck: false,
@@ -69,9 +70,12 @@ test("dry run: every look-alike shape is rejected with a reason; every real cont
       assert.ok(r.reason && r.reason.length > 8, `${key} needs a reason`);
     }
   }
-  // Embedded third-party iframes are not seen at all (documented limit), so they cannot be submitted.
-  for (const key of ["typeform", "jotform"])
-    assert.ok(!byKey.has(key), `${key}: iframe form must not be planned`);
+  // The fixture's "typeform"/"jotform" iframes are same-origin, so their forms are now scanned: they carry no contact intent, so they are rejected.
+  for (const key of ['typeform', 'jotform']) {
+    const rows = byKey.get(key);
+    assert.ok(rows && rows.length, `${key}: the same-origin frame form should be seen`);
+    assert.ok(rows.every((r) => r.status === 'skipped'), `${key} must not be submittable`);
+  }
 });
 
 test("real run: each real contact form receives exactly one lead, nothing else receives anything", async () => {

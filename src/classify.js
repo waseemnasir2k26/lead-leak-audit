@@ -35,7 +35,7 @@ export const NEGATIVES = [
     kind: "comment",
     scopes: SCOPES_ALL,
     re: new RegExp(
-      `${L("repl(?:y|ies|ying)")}|${L("bbp")}|${L("reviews?")}|${L("reviewer")}|${L("ratings?")}|${L("stars?")}|testimonial|guest-?book|${L("forum")}|${L("threads?")}`,
+      `${L("repl(?:y|ies|ying)")}|${L("bbp")}|${L("reviews?")}|${L("reviewer")}|${L("ratings?")}|${L("stars?")}|testimonial|guest-?book|${L("forum")}|${L("threads?")}|${L("answers?")}|${L("answering")}|${L("scores?")}|${L("scoring")}`,
       "i",
     ),
   },
@@ -121,6 +121,8 @@ export const NEGATIVES = [
       "i",
     ),
   },
+  { kind: 'comment', scopes: ['buttons', 'headings', 'attrs', 'fields'], re: new RegExp(`${L('topics?')}`, 'i') },
+  { kind: 'comment', scopes: ['buttons', 'headings', 'labels'], re: /(?:^|\| ?)\s*re\s*:\s/i },
 ];
 
 // Positive wording: what an enquiry looks like (English plus es/fr/de/pt/ur basics).
@@ -131,6 +133,11 @@ const CONTACT_WORDS = new RegExp(
     "contact",
     "enquir",
     "inquir",
+    "support",
+    "how can we help",
+    "ask (?:us|a question)",
+    "request (?:a |an )?(?:booking|appointment|callback|call|quote|demo|info|information)",
+    "booking request",
     "get a (?:free )?quote",
     "free quote",
     "request a (?:free )?quote",
@@ -224,7 +231,46 @@ export function evidenceFor(form) {
   };
 }
 
+// Number inputs that are fine in a contact form (and the only ones ever filled). Any other number/range input
+// is a quantity, amount, count or score of unknown purpose, so the form is rejected and nothing is typed in it.
+export const SAFE_NUMBER =
+  /phone|mobile|tel\b|zip|postal|post-?code|(?<![a-z])code(?![a-z])|(?<![a-z])ext(?:ension)?(?![a-z])|(?<![a-z])age(?![a-z])|year|staff|employee|people|guests?|rooms?|floors?|storey|sq(?:uare)?[-_ ]?(?:ft|m|feet|metres|meters)|(?<![a-z])area(?![a-z])|bedrooms?|bathrooms?|number of|how many|(?<![a-z])units?(?![a-z])/i;
+
+const CURRENCY =
+  /[$€£¥₹₨₦₱฿]\s?\d|\d[\d,.]*\s?[$€£¥₹₨]|(?<![a-z])(?:usd|eur|gbp|pkr|inr|aud|cad|chf)(?![a-z])\s?\d|\d\s?(?:usd|eur|gbp|pkr|dollars?|euros?|pounds?|rupees?)(?![a-z])/i;
+const YES_NO =
+  /^(?:yes|no|maybe|attending|not attending|attend|going|not going|i'?m going|i am going|count me in|can'?t make it|cannot attend|decline|accept|joyfully accept|regretfully decline|yes,? i'?ll be there|no,? i can'?t)[.!]?$/i;
+const HIDDEN_PAYMENT =
+  /(?<![a-z])(?:pan|exp|expiry|expiration|sec|cvc|cvv|card|ccnum|iban|account|routing)(?![a-z])/i;
+const VENDOR_INTENT =
+  /wpcf7|gform|wpforms|elementor-form|hs-form|hsform|hbspt|form-builder|ninja-forms|nf-form|frm_forms|fluentform|forminator|contact[-_ ]?form|jetpack-contact|et_pb_contact|(?<![a-z])contact(?![a-z])/i;
+
+/** Option texts / radio labels that mean "attending", "yes/no" and the like. */
+function yesNoOption(form) {
+  for (const f of form.fields || []) {
+    if (f.tag === "select") {
+      for (const o of f.options || [])
+        if (
+          YES_NO.test(String(o.text).trim()) ||
+          YES_NO.test(String(o.value).trim())
+        )
+          return `option "${o.text || o.value}" in select "${f.name || f.id}"`;
+    }
+    if (f.type === "radio") {
+      const t = `${f.label || ""}`.trim();
+      if (YES_NO.test(t) || YES_NO.test(String(f.value || "").trim()))
+        return `radio "${t || f.value}"`;
+    }
+  }
+  return null;
+}
+
 /**
+ * Strict allow-list: AND of
+ *   1. contact intent in heading / button / label / legend / form markup (contact vocabulary), and
+ *   2. a message / details field (or, for recognised form-builder markup, name + email + phone), and
+ *   3. an email or phone field to reply to,
+ * and NO negative signal anywhere a person reads.
  * @returns {{verdict:'lead'|'newsletter'|'reject', kind:string, reasons:string[], positives:string[]}}
  */
 export function assessForm(form) {
@@ -245,6 +291,23 @@ export function assessForm(form) {
     return reject(
       "commerce",
       "payment widget (Stripe, PayPal, Braintree, Square or a card element) inside the form",
+    );
+  // Multi-step forms: step 2 is not on this page, so the tool cannot judge what it would send.
+  const hiddenPay = f.find(
+    (x) =>
+      !x.visible &&
+      x.type !== "submit" &&
+      HIDDEN_PAYMENT.test(`${x.name} ${x.id} ${x.autocomplete}`),
+  );
+  if (hiddenPay)
+    return reject(
+      "multi-step",
+      "multi-step form (step 2 looks like payment): test manually",
+    );
+  if ((form.stepControls || []).length)
+    return reject(
+      "multi-step",
+      `multi-step form (a "${form.stepControls[0]}" step): test manually`,
     );
   for (const url of [
     form.actionAbs,
@@ -277,12 +340,38 @@ export function assessForm(form) {
         });
     }
   }
-  if (negatives.length) {
+  // Currency symbols and amounts anywhere people read them (labels, options, placeholders, buttons, headings).
+  for (const scope of ["labels", "options", "buttons", "headings"]) {
+    const m = ev[scope] && ev[scope].match(CURRENCY);
+    if (m)
+      negatives.push({
+        kind: "donation",
+        text: `amount "${m[0].trim()}" in ${scope}`,
+      });
+  }
+  const yn = yesNoOption(form);
+  if (yn)
+    negatives.push({
+      kind: "event",
+      text: `yes/no or attending answer (${yn})`,
+    });
+  // Number and range inputs of unknown purpose: amounts, counts, scores. Never filled, never submitted.
+  const oddNumber = f.find(
+    (x) =>
+      x.visible &&
+      (x.type === "number" || x.type === "range") &&
+      !SAFE_NUMBER.test(`${x.name} ${x.id} ${x.label} ${x.placeholder}`),
+  );
+  if (oddNumber)
+    negatives.push({
+      kind: "commerce",
+      text: `number field "${oddNumber.name || oddNumber.id || oddNumber.type}" of unknown purpose`,
+    });
+  if (negatives.length)
     return reject(
       negatives[0].kind,
       ...negatives.slice(0, 3).map((n) => `negative signal ${n.text}`),
     );
-  }
 
   const visible = f.filter(
     (x) =>
@@ -300,23 +389,26 @@ export function assessForm(form) {
   );
   const hasEmail = f.some(
     (x) =>
-      x.visible && (x.type === "email" || /e-?mail/i.test(`${x.name} ${x.id}`)),
+      x.visible &&
+      !x.honeypot &&
+      (x.type === "email" || /e-?mail/i.test(`${x.name} ${x.id}`)),
   );
   const hasTel = f.some(
     (x) =>
       x.visible &&
+      !x.honeypot &&
       (x.type === "tel" ||
         /phone|mobile|whatsapp|tel\b/i.test(`${x.name} ${x.id}`)),
   );
   const hasName = f.some(
     (x) =>
       x.visible &&
+      !x.honeypot &&
       /name/i.test(`${x.name} ${x.id} ${x.label} ${x.placeholder}`),
   );
   const textareas = f.filter((x) => x.visible && x.tag === "textarea");
   const role = norm(form.role);
 
-  // Search boxes.
   if (
     role === "search" ||
     (visible.length === 1 &&
@@ -325,44 +417,47 @@ export function assessForm(form) {
   ) {
     return reject("search", "search form");
   }
-
-  // Positive signals.
-  const positives = [];
-  const msgField = textareas.find((x) =>
-    MESSAGE_FIELD.test(`${x.name} ${x.id} ${x.label} ${x.placeholder}`),
-  );
-  if (msgField)
-    positives.push(`message field "${msgField.name || msgField.id}"`);
-  const contactText = [
-    ev.buttons,
-    ev.headings,
-    ev.page,
-    ev.attrs,
-    ev.labels,
-  ].find((t) => CONTACT_WORDS.test(t));
-  if (contactText !== undefined)
-    positives.push(
-      `contact wording "${(contactText.match(CONTACT_WORDS) || [""])[0]}"`,
-    );
-  if (hasName && hasEmail && hasTel) positives.push("name + email + phone");
-
   const hasReply = hasEmail || hasTel;
 
-  // Email-only: a newsletter (never submitted by default), unless it carries contact wording and a message box.
+  // Email-only: a newsletter (never submitted by default).
   if (!textareas.length && hasEmail && visible.length <= 2) {
     return {
       verdict: "newsletter",
       kind: "newsletter",
       reasons: ["email-only form: looks like a newsletter sign-up"],
-      positives,
+      positives: [],
     };
   }
   if (!hasReply)
     return reject("other", "no email or phone field: no way to reply");
-  if (!positives.length)
+
+  // The AND.
+  const positives = [];
+  const intentText = [ev.buttons, ev.headings, ev.labels].find((t) =>
+    CONTACT_WORDS.test(t),
+  );
+  const vendor = VENDOR_INTENT.test(ev.attrs);
+  const intent =
+    intentText !== undefined
+      ? `contact wording "${(intentText.match(CONTACT_WORDS) || [""])[0]}"`
+      : vendor
+        ? "contact-form markup"
+        : null;
+  const msgField = textareas.find((x) =>
+    MESSAGE_FIELD.test(`${x.name} ${x.id} ${x.label} ${x.placeholder}`),
+  );
+  const trio = hasName && hasEmail && hasTel && vendor;
+  if (!intent)
     return reject(
       "other",
-      "no positive lead signal: no message/enquiry field and no contact wording",
+      "no contact intent: no contact wording in the heading, button or labels near the form",
     );
+  if (!msgField && !trio) return reject("other", "no message or details field");
+  positives.push(intent);
+  positives.push(
+    msgField
+      ? `message field "${msgField.name || msgField.id}"`
+      : "name + email + phone in contact-form markup",
+  );
   return { verdict: "lead", kind: "contact", reasons: [], positives };
 }

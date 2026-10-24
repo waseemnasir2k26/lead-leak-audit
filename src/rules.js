@@ -358,6 +358,7 @@ export function detectCaptcha({ formMarkup = [], pageScripts = [] } = {}) {
   return { present: false, kind: null, scope: null };
 }
 
+const VISIBLE_HONEYPOT_TEXT = /leave[\s_-]*(?:this[\s_-]*)?(?:field[\s_-]*)?(?:empty|blank)|do[\s_-]*not[\s_-]*fill|don'?t[\s_-]*fill|(?<![a-z])bots?(?![a-z])|honey[\s_-]*pot|spam[\s_-]*trap|if you are (?:a )?human/i;
 const HONEYPOT_NAME =
   /honey|hpot|(?:^|[-_])hp(?:[-_]|$)|bot[-_]?trap|nospam|do[-_]?not[-_]?fill|leave[-_]?blank|fax|website[-_]?url|url2/i;
 export function isHoneypotField(f) {
@@ -373,6 +374,8 @@ export function isHoneypotField(f) {
     ].includes(f.type)
   )
     return false;
+  // A VISIBLE field that tells people to leave it alone is a honeypot too: never fill it.
+  if (VISIBLE_HONEYPOT_TEXT.test(`${f.name || ""} ${f.id || ""} ${f.label || ""} ${f.placeholder || ""}`)) return true;
   if (f.visible) return false;
   const named = HONEYPOT_NAME.test(`${f.name || ""} ${f.id || ""}`);
   return (
@@ -410,7 +413,7 @@ export function formSignature(form) {
     .sort()
     .join("|");
   const submitters = (form.submitActions || []).map((x) => x.action || "").join(",");
-  return `${(form.method || "get").toLowerCase()} ${form.actionAbs || ""} ${form.id || ""} ${submitters} ${names}`;
+  return `${(form.method || "get").toLowerCase()} ${form.actionAbs || ""} ${form.frameUrl || ""} ${form.id || ""} ${submitters} ${names}`;
 }
 
 /** Host comparison key: lowercase, no leading www., default ports dropped, other ports kept. */

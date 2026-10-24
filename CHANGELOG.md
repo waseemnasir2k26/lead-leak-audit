@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 - 2026-10-25
+
+- **Classifier is a true AND.** Contact intent (heading, button, label, legend or recognised form-builder markup) AND a message/details field AND an email or phone field. A forum reply ("Re:" heading, "Write your answer"), a donation (number field plus $10/$25 radios), an RSVP (yes/no select) and rating/score inputs are rejected; so are currency symbols or amounts in labels, options and placeholders, yes/no/attending radios and selects, reply/answer/thread/topic wording, and any number or range input of unknown purpose. Unknown number inputs are never filled. Multi-step forms (a "Next" button, or hidden card fields) are rejected with "test manually". Tested with neutral fixture names (`/pageN`, title "Welcome").
+- **Outcomes tell the truth.** "delivered" needs positive evidence (success text or a thank-you URL; an IMAP reply upgrades "unconfirmed"). A blank 200, a vanished form or a crash page ("fatal error", "uncaught", "exception", stack trace) is "unconfirmed". A redirect or navigation to a foreign or forbidden target after the POST was received is reported as "delivered-redirect-blocked": "received by your server (HTTP 302); the follow-up redirect to host/path was blocked by the safety rail". Our own aborts no longer show up as network errors, and a blocked meta-refresh no longer claims the visitor saw a confirmation. Every report says "delivery unverified without --imap".
+- **Time traps and honeypots.** `--dwell` (default 6 s) between page load and submit, with human-pace typing and a few pointer moves. A visible field whose label, placeholder or name says to leave it empty ("leave blank", "do not fill", "bot", "honeypot") is never filled.
+- `--only` must be precise: `""`, `/`, `.` and other short or punctuation-only values are refused; with `--yes` each token must match exactly one form.
+- Forms in same-origin iframes are scanned and tested; cross-origin form embeds are listed as an info finding and count as a lead path.
+- README documents third-party form services (skipped; `--allow-domain` opts in), the time-trap and honeypot behaviour, and generates the never-submit table from a real dry run (`npm run docs:table`). Git Bash users get a hint when no terminal is available.
+
 ## 1.1.0 - 2026-10-25
 
 Redesign of form selection and of the network guard. Upgrade if you used `submit`.

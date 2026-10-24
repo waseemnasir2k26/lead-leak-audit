@@ -6,6 +6,7 @@ import { ATTACKS, startAttackSites } from "./vendor-sites.js";
 
 let sites;
 const OPTS = {
+  dwellMs: 0,
   iOwn: true,
   email: "qa@example.test",
   linkCheck: false,
@@ -81,14 +82,16 @@ test('redirects: a 307 to a foreign host and a chain that ends there are aborted
     before,
     `the foreign server was contacted: ${sites.foreignHits}`,
   );
+  assert.match(res.redirect307.detail, /^received by your server \(HTTP 307\); the follow-up redirect to 127\.0\.0\.1:\d+\/r307 was blocked by the safety rail/);
+  assert.match(res.redirectChain.detail, /^received by your server \(HTTP 303\); the follow-up redirect to 127\.0\.0\.1:\d+\/hop3 was blocked by the safety rail/);
   for (const k of ["redirect307", "redirectChain"]) {
-    assert.equal(res[k].status, "skipped", `${k}: ${JSON.stringify(res[k])}`);
-    assert.match(
-      res[k].detail,
-      /^blocked: redirect to foreign host 127\.0\.0\.1:\d+/,
-    );
+    assert.equal(res[k].status, "delivered-redirect-blocked", `${k}: ${JSON.stringify(res[k])}`);
+    assert.deepEqual(res[k].networkErrors, [], "our own abort is not a network error");
   }
-  assert.notEqual(res.metaRefresh.status, "failed");
+  // A meta refresh to another host after delivery: exact, truthful wording, never "saw a confirmation on /".
+  assert.equal(res.metaRefresh.status, "delivered-redirect-blocked", JSON.stringify(res.metaRefresh));
+  assert.match(res.metaRefresh.detail, /^received by your server \(HTTP 200\); the follow-up navigation to 127\.0\.0\.1:\d+\/meta was blocked by the safety rail/);
+  assert.ok(!/saw a confirmation/.test(res.metaRefresh.detail));
 });
 
 test("service worker: blocked, so it cannot forward a request to another host", async () => {

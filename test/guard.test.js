@@ -98,6 +98,7 @@ const fld = (o) => ({
 });
 const base = () => ({
   kind: "contact",
+  heading: "Contact us",
   sig: "s",
   actionAbs: U("/api/lead"),
   id: "f",

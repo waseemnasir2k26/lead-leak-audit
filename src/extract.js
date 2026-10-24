@@ -81,6 +81,9 @@ export function extractPage(opts) {
           ariaHidden: el.getAttribute("aria-hidden") === "true",
           tabindexNegative: el.getAttribute("tabindex") === "-1",
           autocomplete: el.getAttribute("autocomplete") || "",
+          value: /^(radio|checkbox)$/.test(type) ? el.value || "" : "",
+          min: el.getAttribute("min") || "",
+          max: el.getAttribute("max") || "",
           multiple: !!el.multiple,
           options:
             tag === "select"
@@ -183,6 +186,12 @@ export function extractPage(opts) {
         submit,
         captchaMarkup: markup,
         // Evidence for the allow-list classifier: what a human reads on and around the form.
+        // Controls that move to a later step instead of submitting ("Next", "Continue"): multi-step forms.
+        stepControls: Array.from(form.elements)
+          .filter((e) => /^(BUTTON|INPUT)$/.test(e.tagName))
+          .map((e) => ((e.tagName === "INPUT" ? e.value : e.textContent) || e.getAttribute("aria-label") || "").trim().replace(/\s+/g, " "))
+          .filter((t) => /^(next|continue|proceed|step\s*\d|siguiente|continuar|suivant|weiter|pr[oó]ximo)/i.test(t))
+          .slice(0, 5),
         submitTexts: Array.from(form.elements)
           .filter((e) => /^(BUTTON|INPUT)$/.test(e.tagName) && !/^(button|reset|hidden|text|email|tel|number|checkbox|radio|file|password|date|url|search)$/i.test(e.getAttribute("type") || (e.tagName === "BUTTON" ? "submit" : "")))
           .map((e) => ((e.value && e.tagName === "INPUT" ? e.value : e.textContent) || e.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 80))

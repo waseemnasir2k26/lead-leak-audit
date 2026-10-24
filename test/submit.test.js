@@ -30,6 +30,7 @@ const field = (o) => ({
 });
 const mkForm = (o = {}) => ({
   sig: "sig" + Math.random(),
+  heading: "Contact us",
   kind: "contact",
   firstPage: "https://acme.test/contact",
   actionAbs: "https://acme.test/send",

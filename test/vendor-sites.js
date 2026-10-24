@@ -138,7 +138,7 @@ export async function startAttackSites() {
     const m = u.pathname.match(/^\/p\/(.+)/);
     if (m && ATTACKS[m[1]]) {
       r.writeHead(200, { 'content-type': 'text/html' });
-      return r.end(`<title>${m[1]}</title><h1>${m[1]}</h1>` + ATTACKS[m[1]].replaceAll('__FOREIGN_HOSTPORT__', FOREIGN_HOSTPORT).replaceAll('__FOREIGN__', FOREIGN));
+      return r.end(`<title>${m[1]}</title><h1>Contact us</h1>` + ATTACKS[m[1]].replaceAll('__FOREIGN_HOSTPORT__', FOREIGN_HOSTPORT).replaceAll('__FOREIGN__', FOREIGN));
     }
     r.writeHead(200, { 'content-type': 'text/html' });
     r.end('ok');

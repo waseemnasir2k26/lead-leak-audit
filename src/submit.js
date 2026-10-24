@@ -13,7 +13,7 @@ import {
 } from "./rules.js";
 import { VERSION } from "./scan.js";
 import { forbiddenEndpoint } from "./guard.js";
-import { assessForm } from "./classify.js";
+import { assessForm, SAFE_NUMBER } from "./classify.js";
 
 export const HARD_MAX_FORMS = 10;
 export const TEST_NAME = "LEAD-LEAK-AUDIT TEST";
@@ -116,8 +116,11 @@ export function valueFor(f, ctx) {
       action: "fill",
       value: "https://example.com/lead-leak-audit-test",
     };
-  if (f.type === "number" || f.type === "range")
-    return { action: "fill", value: "1" };
+  if (f.type === "number" || f.type === "range") {
+    // Only number fields with a known harmless purpose are ever filled; anything else is left alone.
+    if (SAFE_NUMBER.test(`${f.name} ${f.id} ${f.label} ${f.placeholder}`)) return { action: "fill", value: "1" };
+    return f.required ? { action: "unfillable", why: `required number field "${f.name || f.id}" of unknown purpose` } : skip("number field of unknown purpose: never filled");
+  }
   if (f.type === "date") return { action: "fill", value: ctx.today };
   if (f.type === "time") return { action: "fill", value: "10:00" };
   const hint = `${f.name} ${f.id} ${f.label} ${f.placeholder}`.toLowerCase();
@@ -212,11 +215,14 @@ export function planForm(
 }
 
 const SUCCESS_RE =
-  /thank|thanks|success|received|has been sent|was sent|message sent|we(?:'| wi)ll (?:be in touch|get back|contact|respond|reply)|get back to you|submitted|appreciate|merci|gracias|danke|terima kasih/i;
+  /thank|thanks|success|received|has been sent|was sent|message sent|sent successfully|we(?:'| wi)ll (?:be in touch|get back|contact|respond|reply)|will get back|get back to you|in touch (?:soon|shortly)|submitted|appreciate|merci|message envoy|gracias|mensaje enviado|recibimos|obrigad[oa]|mensagem enviada|danke|nachricht gesendet|vielen dank|grazie|messaggio inviato|terima kasih|shukriya|شکریہ|شكرا|धन्यवाद|谢谢|ありがとう/i;
+// "Fatal" wording means the page after submit is a crash page, not an answer: never "delivered", never a leak verdict.
+const FATAL_RE =
+  /fatal error|critical error|uncaught|stack ?trace|exception|internal server error|http error 5\d\d|\b5\d\d (?:error|internal)|traceback|undefined (?:index|variable)|syntax error/i;
 const ERROR_RE =
-  /something went wrong|went wrong|failed|unable to|could not|couldn't|not sent|try again|error occurred|server error|invalid|spam/i;
+  /something went wrong|went wrong|failed|unable to|could not|couldn't|not sent|try again|error occurred|server error|invalid|spam|fatal error|critical error|uncaught|stack ?trace|exception/i;
 const THANKS_URL =
-  /thank|success|confirm|sent|received|done|merci|gracias|danke/i;
+  /thank|success|confirm|sent|received|done|merci|gracias|danke|grazie|obrigad/i;
 
 export function newLines(before, after) {
   const seen = new Set(
@@ -232,15 +238,19 @@ export function newLines(before, after) {
     .join("\n");
 }
 
+const asNav = (e) => (typeof e === "string" ? { path: e, nav: false } : e);
+
 /**
- * Pure verdict for one submission attempt.
- * relevant: [{method, url, status|null, failed?, error?}]
+ * Pure verdict for one submission attempt. "delivered" needs POSITIVE evidence: a success message or a
+ * thank-you URL (an IMAP reply upgrades "unconfirmed" later). A blank page, a vanished form or a crash page is "unconfirmed".
+ * relevant: [{method, url, status|null, failed?, abortedByUs?, error?, nav?}]
  */
 export function classifyOutcome({
   relevant = [],
   blockedForeign = [],
   blockedForbidden = [],
   blockedRedirects = [],
+  blockedNavs = [],
   finalHostForeign = null,
   validationBlocked = false,
   startUrl,
@@ -250,13 +260,44 @@ export function classifyOutcome({
   formGone = false,
 }) {
   const urlChanged =
-    !!finalUrl && finalUrl.split("#")[0] !== startUrl.split("#")[0];
+    !!finalUrl &&
+    /^https?:/i.test(finalUrl) &&
+    finalUrl.split("#")[0] !== startUrl.split("#")[0];
   const evidence = relevant
     .map(
       (r) =>
-        `${r.method} ${safePath(r.url)} -> ${r.failed ? "FAILED " + (r.error || "") : r.status}`,
+        `${r.method} ${safePath(r.url)} -> ${r.failed ? "FAILED " + (r.error || "") : r.status === null ? "blocked" : r.status}`,
     )
     .join(" | ");
+  const forbidden = blockedForbidden.map(asNav);
+  const received = relevant.find(
+    (r) => r.status !== null && r.status < 400 && !r.failed,
+  );
+  const where = (h, p) => `${h || ""}${p || ""}`;
+
+  // The lead reached the server, then a safety rail stopped what came next: report exactly that.
+  if (received) {
+    if (blockedRedirects.length) {
+      const r = blockedRedirects[0];
+      return {
+        status: "delivered-redirect-blocked",
+        detail: `received by your server (HTTP ${r.status ?? received.status}); the follow-up redirect to ${where(r.host, r.path)} was blocked by the safety rail. The confirmation page was not visited, so the visitor experience is unverified.`,
+        evidence,
+        http: r.status ?? received.status,
+        blocked: where(r.host, r.path),
+      };
+    }
+    const nav = blockedNavs[0] || forbidden.find((e) => e.nav);
+    if (nav) {
+      return {
+        status: "delivered-redirect-blocked",
+        detail: `received by your server (HTTP ${received.status}); the follow-up navigation to ${where(nav.host, nav.path)} was blocked by the safety rail. The confirmation page was not visited, so the visitor experience is unverified.`,
+        evidence,
+        http: received.status,
+        blocked: where(nav.host, nav.path),
+      };
+    }
+  }
   if (blockedRedirects.length) {
     const r = blockedRedirects[0];
     return {
@@ -275,8 +316,10 @@ export function classifyOutcome({
       evidence,
     };
   }
-  if (blockedForbidden.length) {
-    const paths = [...new Set(blockedForbidden)].slice(0, 3).join(", ");
+  if (forbidden.length) {
+    const paths = [...new Set(forbidden.map((e) => e.path))]
+      .slice(0, 3)
+      .join(", ");
     return {
       status: "skipped",
       detail: `blocked: forbidden endpoint ${paths}. While submitting, the form (or a script on the page) tried to reach an endpoint this tool never touches (comments, cart, checkout, orders, payments, account, unsubscribe, delete, login, or a path robots.txt disallows). The request was aborted in the browser, so this form counts as not submitted.`,
@@ -314,7 +357,7 @@ export function classifyOutcome({
       evidence,
     };
   }
-  const failed = relevant.find((r) => r.failed);
+  const failed = relevant.find((r) => r.failed && !r.abortedByUs);
   if (failed)
     return {
       status: "failed",
@@ -330,13 +373,25 @@ export function classifyOutcome({
       evidence,
       http: bad.status,
     };
-  const last = relevant[relevant.length - 1];
+  const last =
+    relevant.filter((r) => r.status !== null).at(-1) ||
+    relevant[relevant.length - 1];
   const scope = urlChanged ? textAfter : newLines(textBefore, textAfter);
   const redirectUrl = urlChanged ? finalUrl : null;
+  if (FATAL_RE.test(scope)) {
+    return {
+      status: "unconfirmed",
+      serverError: true,
+      detail: `The server answered HTTP ${last.status}, but the page shown afterwards looks like a crash page ("${firstLine(scope, FATAL_RE)}"). Delivery is unverified: the lead may or may not have been processed.`,
+      evidence,
+      http: last.status,
+      redirect: redirectUrl,
+    };
+  }
   if (ERROR_RE.test(scope) && !SUCCESS_RE.test(scope)) {
     return {
       status: "error-message",
-      detail: `The form answered HTTP ${last.status} but the page now shows an error message: "${firstLine(scope.match(ERROR_RE) ? scope : "")}".`,
+      detail: `The form answered HTTP ${last.status} but the page now shows an error message: "${firstLine(scope, ERROR_RE)}".`,
       evidence,
       http: last.status,
       redirect: redirectUrl,
@@ -344,28 +399,19 @@ export function classifyOutcome({
   }
   const textConfirm = SUCCESS_RE.test(scope);
   const urlConfirm = urlChanged && THANKS_URL.test(finalUrl);
-  if (
-    textConfirm ||
-    urlConfirm ||
-    (urlChanged && formGone) ||
-    (!urlChanged && formGone)
-  ) {
+  if (textConfirm || urlConfirm) {
     return {
       status: "delivered",
-      detail: `Accepted (HTTP ${last.status}) and the visitor saw a confirmation${redirectUrl ? " on " + safePath(redirectUrl) : ""}.`,
+      detail: `Accepted (HTTP ${last.status}) and the visitor saw a confirmation${redirectUrl ? " on " + safePath(redirectUrl) : ""}. Delivery to an inbox is unverified without --imap.`,
       evidence,
       http: last.status,
       redirect: redirectUrl,
-      confirmation: textConfirm
-        ? "message"
-        : urlConfirm
-          ? "thank-you-url"
-          : "form-replaced",
+      confirmation: textConfirm ? "message" : "thank-you-url",
     };
   }
   return {
     status: "unconfirmed",
-    detail: `The server accepted the request (HTTP ${last.status}) but the visitor saw no confirmation message and no thank-you page.`,
+    detail: `The server accepted the request (HTTP ${last.status}) but there is no positive evidence of delivery: no thank-you message and no thank-you page${formGone ? " (the form disappeared, which proves nothing)" : ""}.`,
     evidence,
     http: last.status,
     redirect: redirectUrl,
@@ -380,10 +426,10 @@ function safePath(u) {
     return String(u).slice(0, 60);
   }
 }
-function firstLine(t) {
+function firstLine(t, re) {
   const m = String(t)
     .split("\n")
-    .find((l) => ERROR_RE.test(l));
+    .find((l) => re.test(l));
   return (m || "").slice(0, 120);
 }
 
@@ -409,6 +455,24 @@ const NEVER_REASON = {
   login: 'login form: never submitted',
   search: 'search form: never submitted',
 };
+
+/**
+ * --only must name forms precisely: a 1-based number, "#id", ".class", or a text of at least 4 characters
+ * (containing letters or digits) that appears in the form action, id or name. "", "/" and "." are refused,
+ * so an unattended run can never end up selecting everything.
+ */
+export function validateOnly(only) {
+  for (const raw of only || []) {
+    const t = String(raw ?? "").trim();
+    const ok =
+      /^[1-9]\d*$/.test(t) ||
+      /^#[A-Za-z0-9_:.-]+$/.test(t) ||
+      /^\.[A-Za-z0-9_-]+$/.test(t) ||
+      (t.length >= 4 && (t.match(/[A-Za-z0-9]/g) || []).length >= 3);
+    if (!ok) throw new RailError(`--only "${raw}" is too broad or empty. Use an exact form number from --dry-run (for example 2), an #id, a .class, or at least 4 characters of the form action.`);
+  }
+  return true;
+}
 
 /** --only matcher: a 1-based form number, #id, .class, or a substring of the form action / id / name. */
 export function matchesOnly(form, index, only) {
@@ -437,6 +501,7 @@ export function planSubmissions(inventory, { email, allowed, maxForms = HARD_MAX
     const skip = (reason, status = 'skipped') => results.push({ ...base, status, reason });
     const a = f.assessment || assessForm(f);
     base.kind = a.kind;
+    base.positives = a.positives || [];
     if (a.verdict === 'reject') {
       const first = a.reasons[0] || 'not a lead form';
       skip(first.startsWith('forbidden endpoint') ? `blocked: ${first}` : `rejected as ${a.kind}: ${a.reasons.join('; ')}`);
@@ -485,6 +550,7 @@ export async function runSubmissions(
     allowSignupForNewsletter = false,
     deadline = Infinity, // epoch ms: whole-run wall-clock cap
     formTimeoutMs = 90000, // per-form cap
+    dwellMs = 6000, // minimum time between page load and submit (0 = off; also turns off human-pace typing)
   },
 ) {
   const out = [];
@@ -511,6 +577,7 @@ export async function runSubmissions(
         waitMs,
         robots,
         allowSignupForNewsletter,
+        dwellMs,
         formTimeoutMs: Math.min(
           formTimeoutMs,
           Math.max(5000, deadline - Date.now()),
@@ -531,6 +598,7 @@ async function runOneForm(
     robots,
     allowSignupForNewsletter,
     formTimeoutMs,
+    dwellMs,
   },
 ) {
   const t0 = Date.now();
@@ -547,6 +615,7 @@ async function runOneForm(
     waitMs,
     robots,
     allowSignupForNewsletter,
+    dwellMs,
   });
   const timeout = new Promise((resolve) => {
     timer = setTimeout(() => resolve("timeout"), formTimeoutMs);
@@ -571,13 +640,21 @@ async function doOneForm(
   ctx,
   item,
   record,
-  { allowed, settleMs, waitMs, robots, allowSignupForNewsletter },
+  { allowed, settleMs, waitMs, robots, allowSignupForNewsletter, dwellMs },
 ) {
   const blockedForeign = [];
   const blockedForbidden = [];
   const blockedRedirects = [];
   const chainFinal = []; // URLs the server redirected us through (we follow them ourselves)
   const blockedBeacons = []; // foreign GET/image/websocket traffic after arming: recorded, never sent
+  const blockedNavs = []; // navigations (foreign or forbidden) stopped AFTER the click: what the page tried to do next
+  const ours = new Set(); // requests WE aborted: not network errors of the site under test
+  const hopStatus = new Map(); // request -> status the server really answered before we stopped the follow-up
+  const abortOurs = (route, req, status) => {
+    ours.add(req);
+    if (status !== undefined) hopStatus.set(req, status);
+    return route.abort("blockedbyclient");
+  };
   let armed = false;
 
   await ctx.route("**/*", async (route) => {
@@ -596,13 +673,14 @@ async function doOneForm(
     if (!isHostAllowed(u.host, allowed)) {
       if (!safeMethod || nav) {
         blockedForeign.push(u.host);
-        return route.abort("blockedbyclient");
+        if (armed && nav) blockedNavs.push({ host: u.host, path: u.pathname, kind: "foreign" });
+        return abortOurs(route, req);
       }
       if (armed) {
         blockedBeacons.push(
           `${rt} GET ${u.host}${u.pathname}${u.search ? "?…" : ""}`,
         );
-        return route.abort("blockedbyclient");
+        return abortOurs(route, req);
       }
       return route.continue();
     }
@@ -615,8 +693,8 @@ async function doOneForm(
         allowSignup: item.kind === "newsletter" && allowSignupForNewsletter,
       });
       if (hit) {
-        blockedForbidden.push(hit.path);
-        return route.abort("blockedbyclient");
+        blockedForbidden.push({ path: hit.path, nav });
+        return abortOurs(route, req);
       }
     }
     // 3. Redirect rail. The browser is never allowed to follow a 3xx on its own: every hop is fetched here
@@ -632,6 +710,7 @@ async function doOneForm(
       } catch {
         return route.abort('failed');
       }
+      const firstStatus = resp.status();
       for (let hop = 0; hop < 8; hop++) {
         const status = resp.status();
         const loc = resp.headers().location;
@@ -643,13 +722,13 @@ async function doOneForm(
           return route.abort('blockedbyclient');
         }
         if (/^https?:$/.test(target.protocol) && !isHostAllowed(target.host, allowed)) {
-          blockedRedirects.push({ host: target.host, kind: 'foreign' });
-          return route.abort('blockedbyclient');
+          blockedRedirects.push({ host: target.host, kind: 'foreign', path: target.pathname, status: firstStatus });
+          return abortOurs(route, req, firstStatus);
         }
         const hit = forbiddenEndpoint(target.href, { robots, allowSignup: item.kind === 'newsletter' && allowSignupForNewsletter });
         if (hit) {
-          blockedRedirects.push({ host: target.host, kind: 'forbidden', path: hit.path });
-          return route.abort('blockedbyclient');
+          blockedRedirects.push({ host: target.host, kind: 'forbidden', path: hit.path, status: firstStatus });
+          return abortOurs(route, req, firstStatus);
         }
         // 301/302/303 turn a POST into a GET; 307/308 keep the method and the body.
         const keep = status === 307 || status === 308;
@@ -726,7 +805,10 @@ async function doOneForm(
   });
   ctx.on('requestfailed', (r) => {
     const rec = pending.get(r);
-    if (rec && rec.status === null) {
+    if (rec && ours.has(r)) {
+      rec.abortedByUs = true; // our own safety rail, not a network error
+      if (hopStatus.has(r)) rec.status = hopStatus.get(r);
+    } else if (rec && rec.status === null) {
       rec.failed = true;
       rec.error = r.failure()?.errorText || 'failed';
     }
@@ -742,15 +824,19 @@ async function doOneForm(
     });
     await page.waitForLoadState("load", { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(settleMs);
+    const loadedAt = Date.now();
     assertHostAllowed(new URL(page.url()).host, allowed); // final host after redirects
-    const x = await page.evaluate(extractPage, {
+    // The form may live in a same-origin iframe.
+    const frame = item.form.frameUrl ? page.frames().find((fr) => fr.url() === item.form.frameUrl) : page.mainFrame();
+    if (!frame) throw Object.assign(new Error("the frame holding this form is gone"), { soft: true });
+    const x = await frame.evaluate(extractPage, {
       chatSelectors: Object.fromEntries(
         CHAT_VENDORS.map((v) => [v.vendor, v.dom]),
       ),
     });
     // Find the form by its exact signature. A loose fallback is used only when it is unambiguous,
     // so a look-alike form can never be picked by mistake.
-    const sigOf = (f) => formSignature({ ...f, fields: f.fields.map((fl) => ({ ...fl })) });
+    const sigOf = (f) => formSignature({ ...f, frameUrl: item.form.frameUrl || "", fields: f.fields.map((fl) => ({ ...fl })) });
     let idx = x.forms.findIndex((f) => sigOf(f) === item.sig);
     if (idx < 0) {
       const loose = x.forms.map((f, k) => (sameForm(f, item.form) ? k : -1)).filter((k) => k >= 0);
@@ -768,9 +854,10 @@ async function doOneForm(
         ...fl,
         honeypot: isHoneypotField(fl),
       })),
+      frameUrl: item.form.frameUrl || "",
       firstPage: page.url(),
-      pageTitle: x.title || "",
-      pageH1: x.h1 || "",
+      pageTitle: await page.title().catch(() => ""),
+      pageH1: item.form.pageH1 || x.h1 || "",
     };
     const liveAssessment = assessForm(liveForm);
     if (
@@ -798,7 +885,7 @@ async function doOneForm(
       return;
     }
     formMethod = live.method;
-    const formLoc = page.locator("form").nth(idx);
+    const formLoc = frame.locator("form").nth(idx);
     // form.elements also covers controls attached through form="id" outside the <form> tag.
     const controls = await formLoc.evaluateHandle((f) =>
       Array.from(f.elements).filter((e) =>
@@ -809,7 +896,13 @@ async function doOneForm(
       try {
         const el = (await controls.getProperty(String(p.i))).asElement();
         if (!el) throw new Error("field not found");
-        if (p.action === "fill") await el.fill(p.value, { timeout: 4000 });
+        if (p.action === "fill") {
+          // Human pace: focus, then type with a small delay, so scripts that watch input events see a person.
+          if (dwellMs > 0 && /^(text|email|tel|url|search|textarea)$/.test(p.type || "")) {
+            await el.fill("", { timeout: 4000 });
+            await el.pressSequentially(p.value, { delay: 10, timeout: 15000 });
+          } else await el.fill(p.value, { timeout: 4000 });
+        }
         else if (p.action === "select")
           await el.selectOption(p.value, { timeout: 4000 });
         else if (p.action === "check")
@@ -818,10 +911,15 @@ async function doOneForm(
         p.error = String(e.message).split("\n")[0];
       }
     }
-    const textBefore = await page.evaluate(() =>
+    // Time-trap defence: nobody fills and sends a form within a second of loading it.
+    for (let left = dwellMs - (Date.now() - loadedAt); left > 0; left = dwellMs - (Date.now() - loadedAt)) {
+      await page.mouse.move(200 + Math.round(Math.random() * 400), 200 + Math.round(Math.random() * 300), { steps: 4 }).catch(() => {});
+      await sleep(Math.min(left, 600));
+    }
+    const textBefore = await frame.evaluate(() =>
       document.body.innerText.slice(0, 8000),
     );
-    const startUrl = page.url();
+    const startUrl = frame.url();
     record.submittedAt = new Date().toISOString();
     const t1 = Date.now();
     relevant.length = 0;
@@ -864,10 +962,12 @@ async function doOneForm(
     let formGone = false;
     let textAfter = "";
     try {
-      textAfter = await resultPage.evaluate(() =>
+      // The result lands in the frame that held the form, or in the popup.
+      const reader = resultPage === page ? frame : resultPage;
+      textAfter = await reader.evaluate(() =>
         document.body.innerText.slice(0, 8000),
       );
-      const state = await page.evaluate((i) => {
+      const state = await frame.evaluate((i) => {
         const f = document.querySelectorAll("form")[i];
         if (!f) return { gone: true, invalid: false };
         const r = f.getBoundingClientRect();
@@ -884,7 +984,9 @@ async function doOneForm(
     } catch {
       formGone = true; // page navigated away mid-evaluate
     }
-    let finalUrl = chainFinal.length && resultPage === page ? chainFinal[chainFinal.length - 1] : resultPage.url();
+    let finalUrl = chainFinal.length && resultPage === page ? chainFinal[chainFinal.length - 1] : resultPage === page ? frame.url() : resultPage.url();
+    // An aborted navigation leaves chrome-error://: that is not where the visitor "landed".
+    if (/^chrome-error:/i.test(finalUrl)) finalUrl = chainFinal.at(-1) || startUrl;
     let finalHostForeign = null;
     try {
       const fu = new URL(finalUrl);
@@ -898,6 +1000,7 @@ async function doOneForm(
       blockedForeign,
       blockedForbidden,
       blockedRedirects,
+      blockedNavs,
       finalHostForeign,
       validationBlocked,
       startUrl,
@@ -946,6 +1049,7 @@ export function summarizePlan(planned) {
     kind: p.kind,
     heading: p.heading,
     submitText: p.submitText,
+    positives: p.positives,
     form: p.label,
     page: p.page,
     status: p.status === "planned" ? "would-submit" : p.status,

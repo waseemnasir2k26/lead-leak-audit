@@ -7,11 +7,13 @@ import { deriveFindings } from "./findings.js";
 import { computeScore } from "./score.js";
 import { fetchRobots, checkLink, checkMx, USER_AGENT } from "./net.js";
 
-export const VERSION = "1.1.0";
+export const VERSION = "1.1.1";
 const SKIP_EXT =
   /\.(?:pdf|jpe?g|png|gif|webp|svg|ico|zip|rar|7z|mp4|mov|mp3|wav|css|js|json|xml|txt|docx?|xlsx?|pptx?|woff2?|ttf)(?:[?#]|$)/i;
 const PRIORITY =
   /contact|quote|book|appointment|enquir|inquir|get-in-touch|reach|support|demo|schedule|consult|whatsapp|chat|pricing|services|about/i;
+
+const FORM_EMBED_HOSTS = /typeform|jotform|hsforms|hubspot|docs\.google\.com\/forms|forms\.gle|formstack|wufoo|airtable|tally\.so|cognitoforms|paperform|formsite|zohopublic|forms\.office|123formbuilder|123contactform|leadconnector|msgsndr|gohighlevel|formspree|basin|netlify|getform|web3forms|cal\.com|calendly/i;
 
 export const MOBILE_CONTEXT = {
   viewport: { width: 390, height: 844 },
@@ -140,6 +142,29 @@ export async function scan(startUrl, opts = {}) {
         await page.waitForTimeout(settleMs);
         rec.extract = await page.evaluate(extractPage, { chatSelectors });
         rec.url = canonical(new URL(page.url()));
+        // Same-origin frames hold forms we can read and test; cross-origin ones are embedded third-party forms.
+        rec.frames = [];
+        rec.embeds = [];
+        for (const fr of page.frames()) {
+          if (fr === page.mainFrame()) continue;
+          const furl = fr.url();
+          if (!/^https?:/i.test(furl)) continue;
+          let sameOrigin = false;
+          try {
+            sameOrigin = hostKey(new URL(furl).host) === hostKey(new URL(page.url()).host);
+          } catch {
+            /* ignore */
+          }
+          if (sameOrigin) {
+            try {
+              rec.frames.push({ url: furl, extract: await fr.evaluate(extractPage, { chatSelectors }) });
+            } catch {
+              /* frame went away */
+            }
+          } else if (FORM_EMBED_HOSTS.test(new URL(furl).host + new URL(furl).pathname)) {
+            rec.embeds.push({ url: furl, host: new URL(furl).host });
+          }
+        }
         const landed = new URL(page.url());
         if (!robots.isAllowed(landed.pathname + landed.search)) {
           rec.error = `redirected to a path robots.txt disallows (${landed.pathname})`;

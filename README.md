@@ -24,54 +24,57 @@ npx github:waseemnasir2k26/lead-leak-audit scan https://your-site.example
 
 `scan` is read-only. `submit` is an **allow-list**: a form is submitted only when it shows positive signals of being an enquiry form, and never when any negative signal appears in what a person would read (button text, labels, headings, select options, field names, form attributes, page URL and title).
 
-- **Positive (all needed):** a message / enquiry / details box, or contact wording on the button, heading, URL or form (contact, enquire, get a quote, request a callback, send message, book a consultation, get in touch, plus Spanish, French, German, Portuguese and Urdu basics), or a name + email + phone trio; **and** an email or phone field to reply to.
-- **Negative (any one rejects):** reply, comment, review, rating, stars, testimonial, guestbook, forum, post, donate, give, pledge, amount, price, quantity, refund, cancel, unsubscribe, erase, delete, GDPR, report listing, password, reset, recover, register, sign up, RSVP, waitlist, webinar, checkout, payment, card, Stripe / PayPal / Braintree / Square elements, job applications, file uploads, login.
-- An `amount`, `price` or `quantity` field means the form is never submitted, and the tool never fills one.
+- **Positive (all three needed, an AND):** (1) contact intent in the heading, button, label or legend near the form (contact, enquire, get a quote, request a callback, send message, book a consultation, get in touch, talk to us, plus Spanish, French, German, Portuguese and Urdu basics) or recognised contact-form markup (Contact Form 7, Gravity Forms, WPForms, Elementor, HubSpot, GoHighLevel and similar); **and** (2) a message / details box (or, for recognised form-builder markup, name + email + phone); **and** (3) an email or phone field to reply to.
+- **Negative (any one rejects):** reply, answer, thread, topic, "Re:" headings, comment, review, rating, stars, score, testimonial, guestbook, forum, post, donate, give, pledge, tip, amount, price, quantity, refund, cancel, unsubscribe, erase, delete, GDPR, report listing, password, reset, recover, register, sign up, RSVP, waitlist, webinar, attend, checkout, payment, card, Stripe / PayPal / Braintree / Square elements, job applications, file uploads, login, multi-step forms (a "Next" button, or hidden card fields), currency symbols or amounts in labels, options or placeholders, yes/no or attending radios and selects, and any number or range input of unknown purpose.
+- An `amount`, `price` or `quantity` field means the form is never submitted, and the tool never fills a number input it cannot tie to a harmless purpose (phone, zip, year, staff count and similar).
 - Newsletter sign-ups (email-only forms) are skipped unless you pass `--include-newsletter`, because that subscribes your test inbox.
 - Anything unknown is rejected. If a real contact form is skipped, `--dry-run` says why.
+- **Third-party form services** (Formspree, Netlify Forms, Google Forms, Basin, Typeform, Jotform, HubSpot embeds and similar) are skipped by default: a form that posts to another host is "blocked: foreign host", and a cross-origin iframe is listed as an embedded third-party form to test by hand. `--allow-domain <host>` opts a host in; the vendor then receives a real test lead.
 
-This is the real dry-run output for a set of look-alike forms (the test pages are named after the shape, so the page URL and title add to some of the reasons):
+This is the literal output of `node scripts/gen-readme-table.mjs --write` (a dry run against look-alike fixtures; those pages are named after the shape, so the URL and title add to some of the reasons). The neutral-name fixtures in `test/neutral-site.js` (`/page1`, title "Welcome") prove the same decisions without that help.
 
-| Form shape | Verdict | Why (from the dry run) |
+<!-- table:start -->
+| Form shape | Verdict | Why (literal dry-run output) |
 | --- | --- | --- |
-| `cf7` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `gravity` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `wpforms` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `elementor` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `hubspot` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `shopifyContact` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `ghl` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `booking` | submitted | positive signals: message field or contact wording, plus email/phone |
-| `hubspotNL` | never | newsletter form: skipped because a test lead would subscribe the test inbox. Pass --includ |
-| `shopifyNLfooter` | never | newsletter form: skipped because a test lead would subscribe the test inbox. Pass --includ |
+| `cf7` | submitted | accepted: contact-form markup; message field "your-message" |
+| `gravity` | submitted | accepted: contact-form markup; message field "input_3" |
+| `wpforms` | submitted | accepted: contact-form markup; message field "wpforms[fields][2]" |
+| `elementor` | submitted | accepted: contact-form markup; message field "form_fields[message]" |
+| `hubspot` | submitted | accepted: contact wording "How can we help"; message field "message" |
+| `shopifyContact` | submitted | accepted: contact wording "Contact"; message field "contact[body]" |
+| `ghl` | submitted | accepted: contact-form markup; name + email + phone in contact-form markup |
+| `booking` | submitted | accepted: contact wording "Request booking"; message field "notes" |
+| `hubspotNL` | never | newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it. |
+| `shopifyNLfooter` | never | newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it. |
 | `shopifyCart` | never | blocked: forbidden endpoint /cart (cart, checkout, order or payment endpoint) |
 | `shopifyAdd` | never | blocked: forbidden endpoint /cart/add (cart, checkout, order or payment endpoint) |
-| `shopifyRecover` | never | blocked: forbidden endpoint /account/recover (account, unsubscribe, delete, login, registe |
-| `donation` | never | "donat" in headings; "donat" in page; "donat" in attrs |
-| `donation2` | never | "donat" in headings; "donat" in page; "donat" in attrs |
-| `donate3` | never | "Donat" in buttons; "donat" in headings; "donat" in page |
-| `job` | never | file upload field |
-| `jobNoFile` | never | "Apply" in buttons; "careers" in attrs; "cover_letter" in fields |
-| `bookingCard` | never | card fields |
-| `bookingCard2` | never | payment widget (Stripe, PayPal, Braintree, Square or a card element) inside the form |
-| `reset` | never | "reset" in buttons; "reset" in headings; "reset" in page |
-| `reset2` | never | "reset" in headings; "reset" in page; "recover" in attrs |
-| `gdpr` | never | "gdpr" in headings; "gdpr" in page; "privacy-request" in attrs |
-| `gdpr2` | never | "gdpr" in headings; "gdpr" in page; "gdpr" in attrs |
-| `forum` | never | "forum" in headings; "forum" in page; "bbp" in attrs |
-| `forum2` | never | "reply" in buttons; "forum" in headings; "forum" in page |
-| `review` | never | "review" in buttons; "review" in headings; "review" in page |
-| `review2` | never | "review" in buttons; "review" in headings; "review" in page |
-| `testimonial` | never | "testimonial" in headings; "testimonial" in page; "testimonial" in attrs |
-| `guestbook` | never | "guestbook" in buttons; "guestbook" in headings; "guestbook" in page |
-| `rsvp` | never | "RSVP" in buttons; "rsvp" in headings; "rsvp" in page |
-| `waitlist` | never | "waitlist" in buttons; "waitlist" in headings; "waitlist" in page |
-| `webinar` | never | "Register" in buttons; "webinar" in buttons; "webinar" in headings |
-| `report` | never | "Report this listing" in buttons |
-| `refund` | never | "refund" in buttons; "refund" in headings; "refund" in page |
-| `cancel` | never | blocked: forbidden endpoint /sink/cancel (account, unsubscribe, delete, login, register or |
-| `postcomment` | never | "comment" in buttons; "Post" in buttons |
-| `reviews-page` | never | "reviews" in headings; "reviews" in page |
+| `shopifyRecover` | never | blocked: forbidden endpoint /account/recover (account, unsubscribe, delete, login, register or password endpoint) |
+| `donation` | never | rejected as donation: negative signal "donat" in headings; negative signal "donat" in page; negative signal "donat" in attrs |
+| `donation2` | never | rejected as donation: negative signal "donat" in headings; negative signal "donat" in page; negative signal "donat" in attrs |
+| `donate3` | never | rejected as donation: negative signal "Donat" in buttons; negative signal "donat" in headings; negative signal "donat" in page |
+| `job` | never | rejected as file-upload: file upload field |
+| `jobNoFile` | never | rejected as job: negative signal "Apply" in buttons; negative signal "careers" in attrs; negative signal "cover_letter" in fields |
+| `bookingCard` | never | rejected as commerce: card fields |
+| `bookingCard2` | never | rejected as commerce: payment widget (Stripe, PayPal, Braintree, Square or a card element) inside the form |
+| `reset` | never | rejected as account: negative signal "reset" in buttons; negative signal "reset" in headings; negative signal "reset" in page |
+| `reset2` | never | rejected as account: negative signal "reset" in headings; negative signal "reset" in page; negative signal "recover" in attrs |
+| `gdpr` | never | rejected as account: negative signal "gdpr" in headings; negative signal "gdpr" in page; negative signal "privacy-request" in attrs |
+| `gdpr2` | never | rejected as account: negative signal "gdpr" in headings; negative signal "gdpr" in page; negative signal "gdpr" in attrs |
+| `forum` | never | rejected as comment: negative signal "forum" in headings; negative signal "forum" in page; negative signal "bbp" in attrs |
+| `forum2` | never | rejected as comment: negative signal "reply" in buttons; negative signal "forum" in headings; negative signal "forum" in page |
+| `review` | never | rejected as comment: negative signal "review" in buttons; negative signal "review" in headings; negative signal "review" in page |
+| `review2` | never | rejected as comment: negative signal "review" in buttons; negative signal "review" in headings; negative signal "review" in page |
+| `testimonial` | never | rejected as comment: negative signal "testimonial" in headings; negative signal "testimonial" in page; negative signal "testimonial" in attrs |
+| `guestbook` | never | rejected as comment: negative signal "guestbook" in buttons; negative signal "guestbook" in headings; negative signal "guestbook" in page |
+| `rsvp` | never | rejected as event: negative signal "RSVP" in buttons; negative signal "rsvp" in headings; negative signal "rsvp" in page |
+| `waitlist` | never | rejected as event: negative signal "waitlist" in buttons; negative signal "waitlist" in headings; negative signal "waitlist" in page |
+| `webinar` | never | rejected as account: negative signal "Register" in buttons; negative signal "webinar" in buttons; negative signal "webinar" in headings |
+| `report` | never | rejected as account: negative signal "Report this listing" in buttons |
+| `refund` | never | rejected as commerce: negative signal "refund" in buttons; negative signal "refund" in headings; negative signal "refund" in page |
+| `cancel` | never | blocked: forbidden endpoint /sink/cancel (account, unsubscribe, delete, login, register or password endpoint) |
+| `postcomment` | never | rejected as comment: negative signal "comment" in buttons; negative signal "Post" in buttons |
+| `reviews-page` | never | rejected as comment: negative signal "reviews" in headings; negative signal "reviews" in page |
+<!-- table:end -->
 
 Real contact forms from Contact Form 7, Gravity Forms, WPForms, Elementor, HubSpot, GoHighLevel and Shopify are accepted and tested; the suite asserts both lists against a local server.
 
@@ -166,7 +169,7 @@ Use a test inbox that is different from the address your site notifies, or the n
 ```
 lead-leak-audit scan <url>   [--max-pages 15] [--out dir] [--settle ms] [--no-link-check] [--no-mx-check] [--json] [--quiet]
 lead-leak-audit submit <url> --i-own-this-site --email <inbox> [--allow-domain host] [--max-forms 10]
-                             [--dry-run] [--only n|#id|.class|text] [--yes] [--include-newsletter] [--max-runtime 10] [--form-timeout 90] [--imap] [--wait 15]
+                             [--dry-run] [--only n|#id|.class|text] [--yes] [--dwell 6] [--include-newsletter] [--max-runtime 10] [--form-timeout 90] [--imap] [--wait 15]
 CI: [--ci] [--threshold 70] [--baseline report.json] [--update-baseline] [--max-drop 10]
 Both: [--open]  open report.html when done
 ```
@@ -182,6 +185,11 @@ Both: [--open]  open report.html when done
 - **Reply timing** matches the test ID in the email text; replies that omit the original message and the ID are not matched. Clock differences between your machine and the mail server can shift results by a few seconds.
 - Single-language heuristics for success and error messages (English and a few common words).
 - Pages that need a login are out of scope.
+- **Delivery is unverified without `--imap`.** A thank-you page proves the form answered, not that the lead reached an inbox. "delivered" needs a success message or a thank-you URL; a blank page, a vanished form or a crash page is "unconfirmed". With `--imap`, a reply carrying the test ID is the positive evidence.
+- **Time traps and honeypots.** The tool waits `--dwell` seconds (default 6) after the page loads and types at human pace, because many spam filters drop forms submitted instantly. It never fills a field that is hidden or whose label, placeholder or name says to leave it empty ("leave this blank", "do not fill", "bot", "honeypot"). Filters that judge mouse movement, IP reputation or JavaScript challenges can still reject a test lead, and that shows up as "no confirmation".
+- **Redirects after delivery are not followed off-site.** If the server answers with a redirect to another host, or the page navigates to a forbidden endpoint after the lead was received, the result is reported as "delivered-redirect-blocked" (received by your server; the follow-up was blocked by the safety rail). The thank-you page itself is not visited.
+- **Frames.** Forms inside same-origin iframes are scanned and tested; forms in cross-origin iframes (Typeform, Jotform, HubSpot and similar) are listed as "embedded third-party form" and need a manual test.
+- **Multi-step forms** are never submitted; the report says to test them manually.
 
 ## Development
 

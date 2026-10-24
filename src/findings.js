@@ -55,6 +55,10 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
     }
   }
 
+  for (const e of inventory.embeds || []) {
+    out.push(mk({ id: "embedded-third-party-form", severity: "info", category: "forms", title: `Embedded third-party form (${e.host})`, detail: `A form from ${e.host} is embedded in an iframe. Its fields live in another origin, so this tool cannot read or test it.`, fix: "Submit it by hand once a month and confirm the lead and the auto-reply arrive.", where: [e.page] }));
+  }
+
   // Forms -------------------------------------------------------------
   for (const f of inventory.forms) {
     if (f.kind !== "contact" && f.kind !== "newsletter") continue;
@@ -583,7 +587,36 @@ export function submissionFindings(sub, { deadActions = new Set() } = {}) {
         }),
       );
       break;
+    case "delivered-redirect-blocked":
+      out.push(
+        mk({
+          id: "submit-redirect-blocked",
+          severity: "info",
+          category: "forms",
+          title: `${label}: received by your server; a follow-up redirect was blocked`,
+          detail: sub.detail,
+          fix: "Nothing to fix. The safety rail stopped the page from leaving the allowed hosts or reaching a forbidden endpoint, so the thank-you page itself was not checked. Open it by hand if you want to see it.",
+          where,
+          evidence: sub.evidence,
+        }),
+      );
+      break;
     case "unconfirmed":
+      if (sub.serverError) {
+        out.push(
+          mk({
+            id: "submit-error-body",
+            severity: "medium",
+            category: "forms",
+            title: `${label}: the page after submit looks like a crash page`,
+            detail: sub.detail,
+            fix: "Open the form, submit it by hand and read the page you land on. A PHP or server error after a successful save is common after plugin updates; a real failure means lost leads.",
+            where,
+            evidence: sub.evidence,
+          }),
+        );
+        break;
+      }
       out.push(
         mk({
           id: "submit-no-confirmation",

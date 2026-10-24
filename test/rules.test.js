@@ -152,6 +152,7 @@ test("honeypot: invisible text fields only", () => {
 test("form kinds", () => {
   const f = (fields, role) => ({
     role,
+    heading: "Contact us",
     fields: fields.map((x) => ({ visible: true, tag: "input", ...x })),
   });
   assert.equal(

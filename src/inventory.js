@@ -47,6 +47,7 @@ export function buildInventory(pages, { ownHost = null } = {}) {
   const booking = new Map();
   const chat = new Map();
   const pageSummaries = [];
+  const embeds = [];
 
   for (const p of pages) {
     const x = p.extract;
@@ -72,16 +73,20 @@ export function buildInventory(pages, { ownHost = null } = {}) {
     ).length;
     summary.consoleErrors = errs.length;
 
-    for (const f of x.forms) {
+    // Forms in the page itself and in same-origin frames (cross-origin frames are listed as embeds).
+    const sources = [{ fx: x, frameUrl: "" }, ...(p.frames || []).map((fr) => ({ fx: fr.extract, frameUrl: fr.url }))];
+    for (const em of p.embeds || []) if (!embeds.some((e) => e.url === em.url)) embeds.push({ ...em, page: p.url });
+    for (const { fx, frameUrl } of sources)
+    for (const f of fx.forms) {
       const fields = f.fields.map((fl) => ({
         ...fl,
         honeypot: isHoneypotField(fl),
       }));
       const captcha = detectCaptcha({
         formMarkup: f.captchaMarkup,
-        pageScripts: [...x.scripts, ...x.iframes, ...(x.resources || [])],
+        pageScripts: [...fx.scripts, ...fx.iframes, ...(fx.resources || [])],
       });
-      const shaped = { ...f, fields, firstPage: p.url, pageTitle: x.title || '', pageH1: x.h1 || '' };
+      const shaped = { ...f, frameUrl, fields, firstPage: p.url, pageTitle: x.title || '', pageH1: x.h1 || '' };
       const assessment = assessForm(shaped);
       const kind = assessment.kind;
       const sig = formSignature(shaped);
@@ -96,6 +101,7 @@ export function buildInventory(pages, { ownHost = null } = {}) {
           name: f.name,
           className: f.className,
           assessment,
+          frameUrl,
           submitTexts: f.submitTexts || [],
           heading: f.heading || '',
           labelTexts: f.labelTexts || [],
@@ -217,14 +223,15 @@ export function buildInventory(pages, { ownHost = null } = {}) {
     tel: [...tel.values()],
     whatsapp: [...whatsapp.values()],
     booking: [...booking.values()],
+    embeds,
     chat: chatList,
   };
 }
 
 export function leadPathCount(inv) {
   return (
-    inv.forms.filter((f) => f.kind === "contact" || f.kind === "newsletter")
-      .length +
+    inv.forms.filter((f) => ["contact", "newsletter", "other", "multi-step"].includes(f.kind)).length +
+    (inv.embeds || []).length +
     inv.mailto.length +
     inv.tel.length +
     inv.whatsapp.length +

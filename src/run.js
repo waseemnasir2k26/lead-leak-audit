@@ -7,6 +7,8 @@ import {
   RailError,
   checkRails,
   planSubmissions,
+  matchesOnly,
+  validateOnly,
   runSubmissions,
   summarizePlan,
 } from "./submit.js";
@@ -46,9 +48,11 @@ export async function runSubmit(url, opts = {}) {
     yes = false, // unattended: only with an explicit --only selection
     maxRuntimeMs = 10 * 60 * 1000,
     formTimeoutMs = 90 * 1000,
+    dwellMs = 6000,
   } = opts;
   const runStart = Date.now();
   const { allowed } = checkRails({ url, iOwn, email, allowDomains }); // throws RailError
+  validateOnly(only); // throws RailError: "", "/" and "." never select anything
   let imapCfg = null;
   if (imap) {
     imapCfg = imapConfigFromEnv();
@@ -91,8 +95,13 @@ export async function runSubmit(url, opts = {}) {
         if (!(await confirm(summary, formatPlan(summary, { email })))) throw new RailError("Cancelled at the confirmation prompt: nothing was sent.");
       } else if (yes) {
         if (!only.length) throw new RailError("--yes needs --only <n|#id|.class|text>: unattended runs must name the forms they may submit.");
+        // Unattended: every --only token must pick exactly one form, so nothing is chosen by accident.
+        for (const token of only) {
+          const hits = result.inventory.forms.filter((f, k) => matchesOnly(f, k + 1, [token])).length;
+          if (hits !== 1) throw new RailError(`--only "${token}" matches ${hits} forms; with --yes it must match exactly one. Use the form number from --dry-run.`);
+        }
       } else {
-        throw new RailError("Refusing to send without confirmation. Run interactively and answer y, or pass --yes together with --only to name the forms for an unattended run.");
+        throw new RailError(`Refusing to send without confirmation. Run interactively and answer y, or pass --yes together with --only to name the forms for an unattended run.${terminalHint()}`);
       }
     }
     const submissions = await runSubmissions(browser, planned, {
@@ -103,13 +112,14 @@ export async function runSubmit(url, opts = {}) {
       log,
       robots,
       allowSignupForNewsletter: includeNewsletter,
+      dwellMs,
     });
     let replies = [];
     const waiting = submissions.filter(
       (s) =>
         s.leadId &&
         s.submittedAt &&
-        ["delivered", "unconfirmed", "error-message"].includes(s.status),
+        ["delivered", "delivered-redirect-blocked", "unconfirmed", "error-message"].includes(s.status),
     );
     if (imap && waiting.length) {
       log(
@@ -130,6 +140,15 @@ export async function runSubmit(url, opts = {}) {
         await client.close?.();
       }
     }
+    // An IMAP reply is positive evidence: it upgrades "unconfirmed" to delivered.
+    for (const r of replies) {
+      const sub = submissions.find((x) => x.leadId === r.leadId);
+      if (sub && r.seconds !== null && ["unconfirmed", "error-message"].includes(sub.status)) {
+        sub.status = "delivered";
+        sub.confirmation = "imap-reply";
+        sub.detail = `${sub.detail} A reply carrying the test ID arrived after ${Math.round(r.seconds)} s, so the lead did reach a mailbox.`;
+      }
+    }
     const deadActions = new Set(
       Object.entries(result.checks.actions)
         .filter(([, r]) => [404, 410].includes(r.status) || (r.status === 0 && r.error))
@@ -148,6 +167,7 @@ export async function runSubmit(url, opts = {}) {
         replies,
         email,
         replyTimingMeasured: imap,
+        deliveryVerified: imap && replies.length > 0 && replies.every((r) => r.seconds !== null),
       },
     };
   } finally {
@@ -194,3 +214,9 @@ export function ciVerdict({ score, threshold, baseline = null, maxDrop = 10 }) {
 }
 
 export { writeReports };
+
+/** Git Bash (mintty) does not give Node a TTY, so the y/N prompt cannot work there. */
+export function terminalHint(env = process.env) {
+  const mintty = env.MSYSTEM || env.TERM_PROGRAM === "mintty" || /mintty/i.test(env.TERM_PROGRAM || "");
+  return mintty && !process.stdin.isTTY ? " It looks like you are in Git Bash (mintty), which hides the terminal from Node: run `winpty node src/cli.js ...`, use PowerShell/cmd, or pass --yes --only <form number>." : "";
+}

@@ -130,6 +130,8 @@ export function buildReport(result, extra = {}) {
       waitedMinutes: r.waitedMinutes,
     })),
     testInbox: extra.email ? maskEmail(extra.email) : null,
+    deliveryVerified: !!extra.deliveryVerified,
+    deliveryNote: (extra.submissions || []).some((x) => x.submittedAt) && !extra.replyTimingMeasured ? "Delivery unverified without --imap: a thank-you page is not proof the lead reached an inbox." : null,
     replyTimingMeasured: !!extra.replyTimingMeasured,
     findings: findings.map(
       ({ n, id, severity, category, title, detail, fix, where, evidence }) => ({
@@ -299,7 +301,7 @@ td.num{text-align:right;width:48px}td.bar{width:38%}td.bar span{display:block;he
 .leak p{margin:6px 0 0}.fix{background:#f0fdf4;border-radius:6px;padding:6px 10px}.where{font-size:12.5px;color:var(--dim)}
 .ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px}
 .st{font-size:12px;border-radius:4px;padding:1px 7px;background:#f3f4f6}
-.st-delivered,.st-great,.st-ok{background:#dcfce7;color:#166534}.st-failed,.st-no-request,.st-dead,.st-leak{background:#fee2e2;color:#991b1b}
+.st-delivered-redirect-blocked,.st-delivered,.st-great,.st-ok{background:#dcfce7;color:#166534}.st-failed,.st-no-request,.st-dead,.st-leak{background:#fee2e2;color:#991b1b}
 .st-unconfirmed,.st-error-message,.st-client-validation{background:#fef3c7;color:#92400e}.st-blocked-captcha,.st-skipped,.st-would-submit{background:#dbeafe;color:#1e40af}
 .scroll{overflow-x:auto}
 footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:13px}
@@ -328,7 +330,7 @@ footer a{color:#1d4ed8}
 <h2>Leaks and how to fix them</h2>
 ${findingCards}
 
-${report.submissions.length ? `<h2>Test submissions</h2><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody>${subRows}</tbody></table></div>` : ""}
+${report.submissions.length ? `<h2>Test submissions</h2>${report.deliveryNote ? `<p class="dim">${esc(report.deliveryNote)}</p>` : ''}<div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody>${subRows}</tbody></table></div>` : ""}
 ${report.replies.length ? `<h2>Reply speed</h2><div class="scroll"><table><thead><tr><th>Form</th><th>First reply</th><th>Bucket</th></tr></thead><tbody>${replyRows}</tbody></table></div><p class="dim">Under 5 min great · under 1 h ok · over 1 h leak · none = dead.</p>` : report.mode === "submit" ? '<p class="dim">Reply timing was not measured (no IMAP access configured).</p>' : ""}
 
 <h2>What was found</h2>

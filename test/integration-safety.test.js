@@ -8,6 +8,7 @@ import { buildReport } from "../src/report.js";
 
 const FAST = {
   confirm: async () => true,
+  dwellMs: 0,
   linkCheck: false,
   mxCheck: false,
   settleMs: 400,

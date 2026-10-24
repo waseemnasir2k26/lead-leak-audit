@@ -44,6 +44,7 @@ Submit (sends ONE clearly marked test lead per distinct form; only on sites you 
   --dry-run              show what would be filled; submits nothing
   --only <n|#id|.class|text>  submit only the matching form(s); n is the form number from --dry-run (repeatable)
   --yes                  skip the y/N prompt (unattended). Requires --only, so a run never auto-picks forms
+  --dwell <sec>          minimum time between page load and submit, with human-pace typing (default 6; 0 = off)
   --max-runtime <min>    whole submit run wall-clock cap (default 10)
   --form-timeout <sec>   per-form cap (default 90)
   --include-newsletter   also submit newsletter forms (this subscribes the test inbox; skipped by default)
@@ -77,6 +78,7 @@ const options = {
   "dry-run": { type: "boolean" },
   "include-newsletter": { type: "boolean" },
   yes: { type: "boolean" },
+  dwell: { type: "string" },
   "max-runtime": { type: "string" },
   "form-timeout": { type: "string" },
   only: { type: "string", multiple: true },
@@ -155,6 +157,7 @@ export async function main(argv = process.argv.slice(2)) {
         dryRun: !!v["dry-run"],
         includeNewsletter: !!v["include-newsletter"],
         yes: !!v.yes,
+        dwellMs: num(v.dwell, "dwell", 6, { min: 0, max: 120 }) * 1000,
         maxRuntimeMs: num(v["max-runtime"], "max-runtime", 10, { min: 1, max: 240 }) * 60000,
         formTimeoutMs: num(v["form-timeout"], "form-timeout", 90, { min: 10, max: 900 }) * 1000,
         // Interactive human gate. Without a terminal (and without --yes --only) runSubmit refuses.
@@ -193,6 +196,7 @@ ${text}`);
     const bl = v.baseline ? readBaseline(path.resolve(v.baseline)) : null;
     const baseline = bl ? bl.score : null;
     const notes = bl?.note ? [bl.note] : [];
+    if (extra.submissions?.some((x) => x.submittedAt) && !extra.replyTimingMeasured) notes.push("Delivery unverified without --imap: a thank-you page is not proof the lead reached an inbox.");
     const verdict = ciVerdict({
       score: report.score.value,
       threshold,
@@ -237,6 +241,7 @@ ${text}`);
         .slice(0, 5);
       for (const f of top) console.log(`  [${f.severity}] ${f.title}`);
       console.log(`\nReport: ${htmlPath}\nJSON:   ${jsonPath}`);
+      for (const n of notes) console.log(`Note: ${n}`);
       if (!verdict.pass)
         console.log(`\nCI check failed: ${verdict.reasons.join("; ")}`);
     }

@@ -11,7 +11,7 @@ import { runScan, runSubmit, writeReports } from "../src/run.js";
 import { RailError } from "../src/submit.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const FAST = { linkCheck: false, mxCheck: false, settleMs: 500, confirm: async () => true };
+const FAST = { linkCheck: false, mxCheck: false, settleMs: 500, confirm: async () => true, dwellMs: 0 };
 let site;
 before(async () => {
   site = await startDemoServer();

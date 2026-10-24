@@ -13,6 +13,7 @@ import { assessForm } from "../src/classify.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = {
+  dwellMs: 0,
   iOwn: true,
   email: "qa@example.test",
   linkCheck: false,
@@ -165,6 +166,7 @@ test("allow-list: amount, price and quantity fields mean the form is never submi
   const f = (extra) => ({
     firstPage: "https://a.test/contact",
     pageTitle: "Contact",
+    heading: "Contact us",
     fields: [
       { tag: "input", type: "text", name: "name", visible: true },
       { tag: "input", type: "email", name: "email", visible: true },
@@ -217,4 +219,10 @@ test("whole-run watchdog: forms after the wall-clock cap are not submitted and s
         !s.submittedAt,
     ),
   );
+});
+
+test('Git Bash (mintty) gets a hint instead of a silent refusal', async () => {
+  const { terminalHint } = await import('../src/run.js');
+  assert.match(terminalHint({ MSYSTEM: 'MINGW64' }), /winpty/);
+  assert.equal(terminalHint({}), '');
 });
