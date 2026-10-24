@@ -227,6 +227,10 @@ test("time trap: a submit within 2.5 s of load is swallowed; the dwell and human
   assert.equal(sites.posts.length, 0);
   const slow = await run(18, "/post/ok", { dwellMs: 3000 });
   assert.equal(slow.sub.status, "delivered", JSON.stringify(slow.sub));
+  // the human-pace typing really typed every field (no silent per-field errors)
+  assert.match(sites.bodies.at(-1).body.message || '', /LLA-[0-9a-f]{8}/);
+  assert.equal(sites.bodies.at(-1).body.name, 'LEAD-LEAK-AUDIT TEST');
+  assert.ok(slow.sub.plan.every((p) => !p.error), JSON.stringify(slow.sub.plan));
   assert.equal(sites.posts.length, 1);
 });
 

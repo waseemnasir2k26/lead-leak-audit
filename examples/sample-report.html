@@ -38,14 +38,14 @@ footer a{color:#1d4ed8}
 <body>
 <main>
 <h1>Lead leak report</h1>
-<p class="dim"><code>http://127.0.0.1:4173/</code> · submit mode · 2026-10-24 19:53 UTC · 7 page(s) scanned</p>
+<p class="dim"><code>http://127.0.0.1:4173/</code> · submit mode · 2026-10-24 19:59 UTC · 7 page(s) scanned</p>
 
 <section class="hero">
   <div class="ring"><div><b>23</b><span>of 100</span></div></div>
   <div style="flex:1;min-width:220px">
     <h2 style="margin:0">Lead survival score: Critical</h2>
     <p class="dim" style="margin:4px 0 0">100 minus penalties per leak (critical -25, high -15, medium -8, low -3). Each area loses at most 40 points. Notes cost nothing. </p>
-    <div class="pills"><span class="pill" style="--c:#b91c1c">critical 1</span><span class="pill" style="--c:#c2410c">high 2</span><span class="pill" style="--c:#b45309">medium 4</span><span class="pill" style="--c:#4b5563">low 2</span><span class="pill" style="--c:#1d4ed8">info 8</span></div>
+    <div class="pills"><span class="pill" style="--c:#b91c1c">critical 1</span><span class="pill" style="--c:#c2410c">high 2</span><span class="pill" style="--c:#b45309">medium 2</span><span class="pill" style="--c:#4b5563">low 2</span><span class="pill" style="--c:#1d4ed8">info 9</span></div>
   </div>
 </section>
 
@@ -88,20 +88,6 @@ footer a{color:#1d4ed8}
   <p class="where">Found on: <code>http://127.0.0.1:4173/chat.html</code></p>
   
 </article>
-<article class="leak" style="--c:#b45309">
-  <header><span class="sev">medium</span><h3>form contact (name/email/phone): browser validation blocked the submit</h3></header>
-  <p>The browser refused to submit because a required or typed field was invalid, even after filling. A real visitor could hit the same wall.</p>
-  <p class="fix"><strong>Fix:</strong> Check for required fields that cannot be filled (hidden, custom-widget or mismatched types).</p>
-  <p class="where">Found on: <code>http://127.0.0.1:4173/contact.html</code></p>
-  
-</article>
-<article class="leak" style="--c:#b45309">
-  <header><span class="sev">medium</span><h3>form contact (fullname/email/details): browser validation blocked the submit</h3></header>
-  <p>The browser refused to submit because a required or typed field was invalid, even after filling. A real visitor could hit the same wall.</p>
-  <p class="fix"><strong>Fix:</strong> Check for required fields that cannot be filled (hidden, custom-widget or mismatched types).</p>
-  <p class="where">Found on: <code>http://127.0.0.1:4173/quote.html</code></p>
-  
-</article>
 <article class="leak" style="--c:#4b5563">
   <header><span class="sev">low</span><h3>Phone link is not in international (E.164) format</h3></header>
   <p>tel:(0800) 123 456 may fail when tapped from another country or from some messaging apps.</p>
@@ -122,6 +108,13 @@ footer a{color:#1d4ed8}
   <p class="fix"><strong>Fix:</strong> Test it by hand once a month. Aggressive CAPTCHA settings are a common reason real leads are rejected.</p>
   <p class="where">Found on: <code>http://127.0.0.1:4173/captcha.html</code></p>
   
+</article>
+<article class="leak" style="--c:#1d4ed8">
+  <header><span class="sev">info</span><h3>form contact (fullname/email/details): test submission confirmed the dead form address</h3></header>
+  <p>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</p>
+  <p class="fix"><strong>Fix:</strong> See the critical finding about the form address; no separate action needed.</p>
+  <p class="where">Found on: <code>http://127.0.0.1:4173/quote.html</code></p>
+  <p class="where">Evidence: <code>POST /api/missing -&gt; 404</code></p>
 </article>
 <article class="leak" style="--c:#1d4ed8">
   <header><span class="sev">info</span><h3>form comment (author/email/comment): not submitted</h3></header>
@@ -173,7 +166,7 @@ footer a{color:#1d4ed8}
   
 </article>
 
-<h2>Test submissions</h2><p class="dim">Delivery unverified without --imap: a thank-you page is not proof the lead reached an inbox.</p><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody><tr><td>contact (name/email/phone)</td><td><span class="st st-client-validation">client-validation</span></td><td>The browser refused to submit because a required or typed field was invalid, even after filling. A real visitor could hit the same wall.</td></tr><tr><td>contact (fullname/email/details)</td><td><span class="st st-client-validation">client-validation</span></td><td>The browser refused to submit because a required or typed field was invalid, even after filling. A real visitor could hit the same wall.</td></tr><tr><td>comment (author/email/comment)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /wp-comments-post.php (comment endpoint)</td></tr><tr><td>commerce (quantity)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /cart/add (cart, checkout, order or payment endpoint)</td></tr><tr><td>account (email)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /unsubscribe (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>account (name/email/message)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /account/delete (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>file-upload (name/email/cv)</td><td><span class="st st-skipped">skipped</span></td><td>rejected as file-upload: file upload field</td></tr><tr><td>newsletter (email)</td><td><span class="st st-skipped">skipped</span></td><td>newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.</td></tr><tr><td>contact (email/message)</td><td><span class="st st-blocked-captcha">blocked-captcha</span></td><td>Blocked by CAPTCHA, test manually.</td></tr></tbody></table></div>
+<h2>Test submissions</h2><p class="dim">Delivery unverified without --imap: a thank-you page is not proof the lead reached an inbox.</p><div class="scroll"><table><thead><tr><th>Form</th><th>Result</th><th>What happened</th></tr></thead><tbody><tr><td>contact (name/email/phone)</td><td><span class="st st-delivered">delivered</span></td><td>Accepted (HTTP 200) and the visitor saw a confirmation on /thanks.html. Delivery to an inbox is unverified without --imap.</td></tr><tr><td>contact (fullname/email/details)</td><td><span class="st st-failed">failed</span></td><td>The submission was answered with HTTP 404 at /api/missing. The lead was not accepted.</td></tr><tr><td>comment (author/email/comment)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /wp-comments-post.php (comment endpoint)</td></tr><tr><td>commerce (quantity)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /cart/add (cart, checkout, order or payment endpoint)</td></tr><tr><td>account (email)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /unsubscribe (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>account (name/email/message)</td><td><span class="st st-skipped">skipped</span></td><td>blocked: forbidden endpoint /account/delete (account, unsubscribe, delete, login, register or password endpoint)</td></tr><tr><td>file-upload (name/email/cv)</td><td><span class="st st-skipped">skipped</span></td><td>rejected as file-upload: file upload field</td></tr><tr><td>newsletter (email)</td><td><span class="st st-skipped">skipped</span></td><td>newsletter form: skipped because a test lead would subscribe the test inbox. Pass --include-newsletter to test it.</td></tr><tr><td>contact (email/message)</td><td><span class="st st-blocked-captcha">blocked-captcha</span></td><td>Blocked by CAPTCHA, test manually.</td></tr></tbody></table></div>
 <p class="dim">Reply timing was not measured (no IMAP access configured).</p>
 
 <h2>What was found</h2>

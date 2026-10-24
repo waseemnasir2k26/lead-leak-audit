@@ -900,7 +900,8 @@ async function doOneForm(
           // Human pace: focus, then type with a small delay, so scripts that watch input events see a person.
           if (dwellMs > 0 && /^(text|email|tel|url|search|textarea)$/.test(p.type || "")) {
             await el.fill("", { timeout: 4000 });
-            await el.pressSequentially(p.value, { delay: 10, timeout: 15000 });
+            await el.focus();
+            await page.keyboard.type(p.value, { delay: 10 });
           } else await el.fill(p.value, { timeout: 4000 });
         }
         else if (p.action === "select")
