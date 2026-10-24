@@ -140,6 +140,11 @@ export async function scan(startUrl, opts = {}) {
         await page.waitForTimeout(settleMs);
         rec.extract = await page.evaluate(extractPage, { chatSelectors });
         rec.url = canonical(new URL(page.url()));
+        const landed = new URL(page.url());
+        if (!robots.isAllowed(landed.pathname + landed.search)) {
+          rec.error = `redirected to a path robots.txt disallows (${landed.pathname})`;
+          rec.extract = null;
+        }
         if (hostKey(new URL(page.url()).host) !== hostKey(start.host)) {
           rec.error = `redirected off-site to ${new URL(page.url()).host}`;
           rec.extract = null;

@@ -494,7 +494,7 @@ export async function runSubmissions(
       }
       const safeMethod = ["GET", "HEAD", "OPTIONS"].includes(req.method());
       if (
-        !safeMethod &&
+        (!safeMethod || req.isNavigationRequest()) &&
         /^https?:$/.test(u.protocol) &&
         !isHostAllowed(u.host, allowed)
       ) {
@@ -617,7 +617,11 @@ export async function runSubmissions(
         .first();
       if (await btn.count()) {
         await btn.click({ timeout: 5000 }).catch(async () => {
-          await formLoc.evaluate((f) => f.requestSubmit());
+          // The click may have fired the submit before timing out. Only fall back
+          // when nothing went out, so a form never receives two test leads.
+          await sleep(1000);
+          if (relevant.length === 0 && page.url() === startUrl)
+            await formLoc.evaluate((f) => f.requestSubmit()).catch(() => {});
         });
       } else {
         await formLoc.evaluate((f) => f.requestSubmit());
