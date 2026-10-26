@@ -82,15 +82,36 @@ test('redirects: a 307 to a foreign host and a chain that ends there are aborted
     before,
     `the foreign server was contacted: ${sites.foreignHits}`,
   );
-  assert.match(res.redirect307.detail, /^received by your server \(HTTP 307\); the follow-up redirect to 127\.0\.0\.1:\d+\/r307 was blocked by the safety rail/);
-  assert.match(res.redirectChain.detail, /^received by your server \(HTTP 303\); the follow-up redirect to 127\.0\.0\.1:\d+\/hop3 was blocked by the safety rail/);
+  assert.match(
+    res.redirect307.detail,
+    /^unconfirmed: the site redirected to 127\.0\.0\.1:\d+, which the safety rail blocked \(HTTP 307\)/,
+  );
+  assert.match(
+    res.redirectChain.detail,
+    /^unconfirmed: the site redirected to 127\.0\.0\.1:\d+, which the safety rail blocked \(HTTP 303\)/,
+  );
   for (const k of ["redirect307", "redirectChain"]) {
-    assert.equal(res[k].status, "accepted-redirect-blocked", `${k}: ${JSON.stringify(res[k])}`);
-    assert.deepEqual(res[k].networkErrors, [], "our own abort is not a network error");
+    assert.equal(
+      res[k].status,
+      "unconfirmed",
+      `${k}: ${JSON.stringify(res[k])}`,
+    );
+    assert.deepEqual(
+      res[k].networkErrors,
+      [],
+      "our own abort is not a network error",
+    );
   }
   // A meta refresh to another host after delivery: exact, truthful wording, never "saw a confirmation on /".
-  assert.equal(res.metaRefresh.status, "accepted-redirect-blocked", JSON.stringify(res.metaRefresh));
-  assert.match(res.metaRefresh.detail, /^received by your server \(HTTP 200\); the follow-up navigation to 127\.0\.0\.1:\d+\/meta was blocked by the safety rail/);
+  assert.equal(
+    res.metaRefresh.status,
+    "accepted-redirect-blocked",
+    JSON.stringify(res.metaRefresh),
+  );
+  assert.match(
+    res.metaRefresh.detail,
+    /^received by your server \(HTTP 200\); the follow-up navigation to 127\.0\.0\.1:\d+\/meta was blocked by the safety rail/,
+  );
   assert.ok(!/saw a confirmation/.test(res.metaRefresh.detail));
 });
 

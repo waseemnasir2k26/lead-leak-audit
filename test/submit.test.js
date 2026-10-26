@@ -436,3 +436,31 @@ test("outcome: a non-JSON body is read as text even when the header says JSON", 
   });
   assert.equal(o.status, "accepted");
 });
+
+// A 3xx only proves the server answered. Redirect to a foreign host after the POST: unconfirmed, never accepted.
+test("outcome: 302 to a foreign host after the POST is unconfirmed, with a manual-check instruction", () => {
+  const o = classifyOutcome({
+    ...base,
+    relevant: [{ method: "POST", url: "https://acme.test/s", status: 302 }],
+    blockedRedirects: [{ host: "pay.other.test", kind: "foreign", path: "/thanks", status: 302 }],
+  });
+  assert.equal(o.status, "unconfirmed");
+  assert.match(
+    o.detail,
+    /^unconfirmed: the site redirected to pay\.other\.test, which the safety rail blocked \(HTTP 302\)\. .*Check that host's thank-you page manually\./,
+  );
+  assert.equal(o.redirectBlocked, true);
+});
+test("outcome: 302 to the SAME host followed by a thank-you page is accepted", () => {
+  const o = classifyOutcome({
+    ...base,
+    finalUrl: "https://acme.test/thank-you",
+    textAfter: "Thanks, we have your message.",
+    relevant: [
+      { method: "POST", url: "https://acme.test/s", status: 302 },
+      { method: "GET", url: "https://acme.test/thank-you", status: 200 },
+    ],
+  });
+  assert.equal(o.status, "accepted");
+  assert.equal(o.redirectBlocked, undefined);
+});

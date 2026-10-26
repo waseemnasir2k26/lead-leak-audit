@@ -136,7 +136,7 @@ Requires Node 20+. `imapflow` is an optional dependency, only used by `--imap`.
 Enforced again at the browser's network layer, whatever the form markup says:
 
 - Every non-GET request, and every navigation after the submit click, is judged by its real URL: host allow-list, `robots.txt`, and a never-touch list (comments, cart, checkout, orders, payments, account, unsubscribe, delete, login, register, password). A button's `formaction`, an action set by script and `fetch()` calls are all covered. A blocked request is aborted and reported as "blocked: forbidden endpoint <path>", and the form counts as not submitted.
-- Redirects are followed by the tool, not the browser: each hop is checked against the same rules, and one that leaves the allowed hosts is aborted and reported as "blocked: redirect to foreign host <host>". A confirmation page on a foreign host is never reported as accepted.
+- Redirects are followed by the tool, not the browser: each hop is checked against the same rules. A hop that leaves the allowed hosts is aborted. After a POST, a redirect to a foreign host is reported as "unconfirmed: the site redirected to <host>, which the safety rail blocked; check that host's thank-you page manually" (a 3xx only proves the server answered). A redirect to the same host followed by a success page is "accepted". A confirmation page on a foreign host is never reported as accepted.
 - Service workers are blocked. Foreign WebSockets and foreign GET beacons or images after the click are blocked and recorded in the report.
 - New windows and tabs (`target="_blank"`, `window.open`) are watched, so their result is seen.
 - Watchdogs: a whole-run cap (`--max-runtime`, default 10 minutes) and a per-form cap (`--form-timeout`, default 90 s); timeouts are reported.
@@ -189,18 +189,19 @@ Both: [--open]  open report.html when done
 
 **Outcome levels** (best to worst; the names are exact):
 
-| Outcome | Meaning | Counts as |
-| --- | --- | --- |
-| `delivered` | An IMAP reply carrying the test ID reached the test inbox. The only proof of an inbox. | OK, no finding |
-| `accepted` | Positive evidence (success message, thank-you URL, or JSON `ok`/`success` true) and no negative cue in the visible text or JSON. Not verified. | OK, with an "unverified" note (info, no penalty) |
-| `accepted-redirect-blocked` | Your server received the lead; the follow-up redirect or navigation was blocked by the safety rail. | Info |
-| `unconfirmed` | Accepted by HTTP, but no positive evidence, or a success word next to a negative cue. | High (or medium for a crash page) |
-| `error-message` | A negative cue with no success wording, or a JSON error (`ok`/`success` false, `status` "error", a filled `error`/`errors`). | High |
-| `failed` | Network failure or HTTP 4xx/5xx on the submission. | Critical |
+| Outcome                     | Meaning                                                                                                                                        | Counts as                                        |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `delivered`                 | An IMAP reply carrying the test ID reached the test inbox. The only proof of an inbox.                                                         | OK, no finding                                   |
+| `accepted`                  | Positive evidence (success message, thank-you URL, or JSON `ok`/`success` true) and no negative cue in the visible text or JSON. Not verified. | OK, with an "unverified" note (info, no penalty) |
+| `accepted-redirect-blocked` | Your server received the lead; a follow-up script or meta-refresh navigation to another host or forbidden endpoint was blocked by the safety rail.                                            | Info                                             |
+| `unconfirmed`               | Accepted by HTTP, but no positive evidence; a success word next to a negative cue; or a 3xx redirect to a foreign host that the safety rail blocked.                                                          | High (or medium for a crash page)                |
+| `error-message`             | A negative cue with no success wording, or a JSON error (`ok`/`success` false, `status` "error", a filled `error`/`errors`).                   | High                                             |
+| `failed`                    | Network failure or HTTP 4xx/5xx on the submission.                                                                                             | Critical                                         |
 
-Negative cues (English, plus basic Spanish, French, German and Portuguese) include "not", "n't", "error", "failed", "unable", "cannot", "problem", "issue", "try again", "went wrong", "rejected", "marked as spam", "invalid" before a field word ("invalid email"), "no se pudo", "error al", "échec", "nicht", "falhou". A bare "spam" or "invalid" is not a cue.
+Negative cues (English, plus basic Spanish, French, German and Portuguese) include "not", "n't", "error", "failed", "unable", "cannot", "problem", "issue", "try again", "went wrong", "rejected", "marked as spam", "invalid" before a field word ("invalid email"), "no se pudo", "error al", "échec", "nicht", "falhou". A bare "spam" or "invalid" is not a cue. Before matching, every visible word, label, button and URL is normalised (fullwidth to ASCII, zero-width and bidi characters removed, Cyrillic and Greek look-alikes folded to Latin). A visible word that mixes Latin with Cyrillic or Greek letters is treated as obfuscated text, and the form is never submitted.
+
 - **Time traps and honeypots.** The tool waits `--dwell` seconds (default 6) after the page loads and types at human pace, because many spam filters drop forms submitted instantly. It never fills a field that is hidden or whose label, placeholder or name says to leave it empty ("leave this blank", "do not fill", "bot", "honeypot"). Filters that judge mouse movement, IP reputation or JavaScript challenges can still reject a test lead, and that shows up as "no confirmation".
-- **Redirects after the submission are not followed off-site.** If the server answers with a redirect to another host, or the page navigates to a forbidden endpoint after the lead was received, the result is reported as "accepted-redirect-blocked" (received by your server; the follow-up was blocked by the safety rail). The thank-you page itself is not visited.
+- **Redirects after the submission are not followed off-site.** If the server answers the POST with a redirect (3xx) to another host, the result is "unconfirmed": a 3xx only shows the server answered, and the thank-you page on that host is not visited, so check it by hand. If the page navigates (script or meta refresh) to another host or a forbidden endpoint after the lead was received, the result is "accepted-redirect-blocked" (received by your server; the follow-up was blocked by the safety rail).
 - **Frames.** Forms inside same-origin iframes are scanned and tested; forms in cross-origin iframes (Typeform, Jotform, HubSpot and similar) are listed as "embedded third-party form" and need a manual test.
 - **Multi-step forms** are never submitted; the report says to test them manually.
 

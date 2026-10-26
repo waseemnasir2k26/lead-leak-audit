@@ -121,8 +121,16 @@ export const NEGATIVES = [
       "i",
     ),
   },
-  { kind: 'comment', scopes: ['buttons', 'headings', 'attrs', 'fields'], re: new RegExp(`${L('topics?')}`, 'i') },
-  { kind: 'comment', scopes: ['buttons', 'headings', 'labels'], re: /(?:^|\| ?)\s*re\s*:\s/i },
+  {
+    kind: "comment",
+    scopes: ["buttons", "headings", "attrs", "fields"],
+    re: new RegExp(`${L("topics?")}`, "i"),
+  },
+  {
+    kind: "comment",
+    scopes: ["buttons", "headings", "labels"],
+    re: /(?:^|\| ?)\s*re\s*:\s/i,
+  },
 ];
 
 // Positive wording: what an enquiry looks like (English plus es/fr/de/pt/ur basics).
@@ -186,6 +194,99 @@ const CONTACT_WORDS = new RegExp(
 );
 
 const norm = (s) => String(s || "").toLowerCase();
+
+// Lowercase Cyrillic and Greek letters that look like Latin ones. Folded to Latin before matching, so a
+// donation button spelled with a Cyrillic "о" still reads "donate". Only matching is folded; nothing is typed or sent.
+const CONFUSABLES = new Map(
+  [
+    [0x0430, "a"],
+    [0x0435, "e"],
+    [0x0451, "e"],
+    [0x043e, "o"],
+    [0x0440, "p"],
+    [0x0441, "c"],
+    [0x0443, "y"],
+    [0x0445, "x"],
+    [0x0456, "i"],
+    [0x0457, "i"],
+    [0x0458, "j"],
+    [0x0455, "s"],
+    [0x04bb, "h"],
+    [0x0501, "d"],
+    [0x051b, "q"],
+    [0x051d, "w"],
+    [0x0261, "g"],
+    [0x03b1, "a"],
+    [0x03b5, "e"],
+    [0x03b9, "i"],
+    [0x03bf, "o"],
+    [0x03c1, "p"],
+    [0x03c4, "t"],
+    [0x03ba, "k"],
+    [0x03bd, "v"],
+    [0x03c5, "u"],
+    [0x03c7, "x"],
+    [0x03f2, "c"],
+  ].map(([cp, latin]) => [String.fromCodePoint(cp), latin]),
+);
+const LATIN_SCRIPT = /\p{Script=Latin}/u;
+const OTHER_SCRIPT = /[\p{Script=Cyrillic}\p{Script=Greek}]/u;
+
+/**
+ * Canonical form of any text the classifier reads: NFKC (fullwidth to ASCII), Unicode format characters
+ * (zero-width space, soft hyphen, word joiner, bidi marks) removed, lowercased, confusables folded, whitespace collapsed.
+ */
+export function normaliseText(s) {
+  if (s === undefined || s === null) return "";
+  return String(s)
+    .normalize("NFKC")
+    .replace(/\p{Cf}/gu, "")
+    .toLowerCase()
+    .replace(/\p{L}/gu, (c) => CONFUSABLES.get(c) ?? c)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** The first word that mixes Latin with Cyrillic or Greek letters (a homoglyph spelling), or null. */
+export function mixedScriptWord(s) {
+  const clean = String(s ?? "")
+    .normalize("NFKC")
+    .replace(/\p{Cf}/gu, "");
+  for (const w of clean.match(/[\p{L}\p{M}]+/gu) || []) {
+    if (LATIN_SCRIPT.test(w) && OTHER_SCRIPT.test(w)) return w;
+  }
+  return null;
+}
+
+// Every string a visitor reads on the form (not names, ids or URLs).
+function visibleTexts(form) {
+  const fields = form.fields || [];
+  return [
+    ...(form.labelTexts || []),
+    ...(form.submitTexts || []),
+    form.submit?.text,
+    form.heading,
+    form.pageH1,
+    form.pageTitle,
+    ...fields.flatMap((f) => [
+      f.label,
+      f.placeholder,
+      ...(f.options || []).map((o) => o.text),
+    ]),
+  ].filter((s) => typeof s === "string" && s);
+}
+
+// Deep copy with every string normalised, so each check below reads the same canonical text.
+function normaliseForm(x) {
+  if (typeof x === "string") return normaliseText(x);
+  if (Array.isArray(x)) return x.map(normaliseForm);
+  if (x && typeof x === "object")
+    return Object.fromEntries(
+      Object.entries(x).map(([k, v]) => [k, normaliseForm(v)]),
+    );
+  return x;
+}
+
 const pathWords = (url) => {
   try {
     const u = new URL(url);
@@ -195,8 +296,15 @@ const pathWords = (url) => {
   }
 };
 
-/** Collect the text a person would read, split by scope. */
+/** Collect the text a person would read, split by scope. Output is canonical (normaliseText). */
 export function evidenceFor(form) {
+  const out = evidenceForRaw(form);
+  return Object.fromEntries(
+    Object.entries(out).map(([k, v]) => [k, normaliseText(v)]),
+  );
+}
+
+function evidenceForRaw(form) {
   const fields = form.fields || [];
   const attrs = [
     form.id,
@@ -273,7 +381,9 @@ function yesNoOption(form) {
  * and NO negative signal anywhere a person reads.
  * @returns {{verdict:'lead'|'newsletter'|'reject', kind:string, reasons:string[], positives:string[]}}
  */
-export function assessForm(form) {
+export function assessForm(rawForm) {
+  // Classify on canonical text. The endpoint gate below still reads the raw URLs (what the request would really do).
+  const form = normaliseForm(rawForm);
   const f = form.fields || [];
   const reject = (kind, ...reasons) => ({
     verdict: "reject",
@@ -309,9 +419,18 @@ export function assessForm(form) {
       "multi-step",
       `multi-step form (a "${form.stepControls[0]}" step): test manually`,
     );
+  // A visible word that mixes Latin with Cyrillic or Greek letters is a homoglyph spelling (e.g. "Dоnate"): never submit.
+  const mixed = visibleTexts(rawForm)
+    .map(mixedScriptWord)
+    .find((w) => w !== null);
+  if (mixed)
+    return reject(
+      "obfuscated",
+      `obfuscated text: the word "${mixed}" mixes Latin with Cyrillic or Greek letters`,
+    );
   for (const url of [
-    form.actionAbs,
-    ...(form.submitActions || []).map((x) => x.action),
+    rawForm.actionAbs,
+    ...(rawForm.submitActions || []).map((x) => x.action),
   ]) {
     if (!url) continue;
     const hit = forbiddenEndpoint(url);

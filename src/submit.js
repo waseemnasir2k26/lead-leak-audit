@@ -380,6 +380,16 @@ export function classifyOutcome({
   if (received) {
     if (blockedRedirects.length) {
       const r = blockedRedirects[0];
+      // A 3xx only proves the server answered. Sent to a foreign host, the thank-you page was never seen: unconfirmed.
+      if (r.kind === "foreign")
+        return {
+          status: "unconfirmed",
+          detail: `unconfirmed: the site redirected to ${r.host}, which the safety rail blocked (HTTP ${r.status ?? received.status}). The server answered, but whether the lead was accepted is not shown. Check that host's thank-you page manually.`,
+          evidence,
+          http: r.status ?? received.status,
+          blocked: where(r.host, r.path),
+          redirectBlocked: true,
+        };
       return {
         status: "accepted-redirect-blocked",
         detail: `received by your server (HTTP ${r.status ?? received.status}); the follow-up redirect to ${where(r.host, r.path)} was blocked by the safety rail. The confirmation page was not visited, so the visitor experience is unverified.`,

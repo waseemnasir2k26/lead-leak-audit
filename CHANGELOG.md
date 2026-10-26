@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1 - 2026-10-26
+
+Closes two ways a lead could be misread: a look-alike donation button submitted as a contact form, and a redirect counted as a confirmation. Upgrade if you act on submission results or rely on the form classifier.
+
+- **Look-alike text is normalised before classification.** Labels, headings, buttons, placeholders, options, names and URLs are NFKC-normalised, stripped of Unicode format characters (zero-width space, soft hyphen, word joiner, bidi marks), lowercased, folded from common Cyrillic and Greek look-alikes to Latin, and whitespace-collapsed. A button with a Cyrillic o, a button with a zero-width space and a fullwidth donation button are all rejected. The endpoint gate still reads the raw URLs.
+- **Obfuscated text is never submitted.** A visible word that mixes Latin with Cyrillic or Greek letters rejects the form with kind "obfuscated".
+- **A 3xx redirect to a foreign host after a POST is "unconfirmed", not "accepted-redirect-blocked".** A 3xx only proves the server answered. The report says "unconfirmed: the site redirected to <host>, which the safety rail blocked; check that host's thank-you page manually", at the same severity as a blank-200 result. A redirect to the same host followed by a success page is still "accepted". Navigation by script or meta refresh keeps "accepted-redirect-blocked".
+- Tests: `test/homoglyph.test.js` (look-alike, zero-width and fullwidth buttons; normaliser; mixed-script words) and redirect cases in `submit.test.js`. The bypass and neutral redirect expectations now assert "unconfirmed".
+
 ## 1.2.0 - 2026-10-26
 
 Renames the outcome levels so "delivered" means what it says. Upgrade if you read submission results.

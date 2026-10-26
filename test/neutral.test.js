@@ -134,13 +134,13 @@ test('outcome: a page without the form and without any thank-you is "unconfirmed
   assert.match(sub.detail, /no thank-you message and no thank-you page/);
 });
 
-test('outcome: a 302 to a foreign host after the POST is "accepted-redirect-blocked", with no false network error', async () => {
+test('outcome: a 302 to a foreign host after the POST is "unconfirmed" with a manual-check note, no false network error', async () => {
   sites.foreignHits.length = 0;
   const { sub, result } = await run(11, "/post/redir302");
-  assert.equal(sub.status, "accepted-redirect-blocked", JSON.stringify(sub));
+  assert.equal(sub.status, "unconfirmed", JSON.stringify(sub));
   assert.match(
     sub.detail,
-    /^received by your server \(HTTP 302\); the follow-up redirect to 127\.0\.0\.1:\d+\/after was blocked by the safety rail/,
+    /^unconfirmed: the site redirected to 127\.0\.0\.1:\d+, which the safety rail blocked \(HTTP 302\)\..*Check that host's thank-you page manually/,
   );
   assert.deepEqual(sub.networkErrors, []);
   assert.ok(!result.findings.some((f) => f.id === "submit-network-error"));
@@ -170,7 +170,7 @@ test('outcome: a meta refresh to another host is the same truthful wording, neve
   assert.deepEqual(sites.foreignHits, []);
 });
 
-test("outcome: accepted-redirect-blocked leads are included in the IMAP wait, and a reply is positive evidence", async () => {
+test("outcome: redirect-blocked leads (accepted-redirect-blocked or unconfirmed) are included in the IMAP wait, and a reply is positive evidence", async () => {
   process.env.LLA_IMAP_HOST = "imap.example.test";
   process.env.LLA_IMAP_USER = "u";
   process.env.LLA_IMAP_PASS = "neutral-pass-123";
@@ -200,7 +200,8 @@ test("outcome: accepted-redirect-blocked leads are included in the IMAP wait, an
     assert.equal(extra.replies[0].bucket, "great");
     assert.equal(extra.deliveryVerified, true);
     assert.equal(
-      extra.submissions.find((s) => s.leadId === extra.replies[0].leadId)?.status,
+      extra.submissions.find((s) => s.leadId === extra.replies[0].leadId)
+        ?.status,
       "delivered",
     );
   } finally {
@@ -232,9 +233,12 @@ test("time trap: a submit within 2.5 s of load is swallowed; the dwell and human
   const slow = await run(18, "/post/ok", { dwellMs: 3000 });
   assert.equal(slow.sub.status, "accepted", JSON.stringify(slow.sub));
   // the human-pace typing really typed every field (no silent per-field errors)
-  assert.match(sites.bodies.at(-1).body.message || '', /LLA-[0-9a-f]{8}/);
-  assert.equal(sites.bodies.at(-1).body.name, 'LEAD-LEAK-AUDIT TEST');
-  assert.ok(slow.sub.plan.every((p) => !p.error), JSON.stringify(slow.sub.plan));
+  assert.match(sites.bodies.at(-1).body.message || "", /LLA-[0-9a-f]{8}/);
+  assert.equal(sites.bodies.at(-1).body.name, "LEAD-LEAK-AUDIT TEST");
+  assert.ok(
+    slow.sub.plan.every((p) => !p.error),
+    JSON.stringify(slow.sub.plan),
+  );
   assert.equal(sites.posts.length, 1);
 });
 
@@ -303,14 +307,19 @@ test("probe: a 404 on the GET/HEAD probe of a POST-only action is info when a re
   assert.equal(sub.status, "accepted", JSON.stringify(sub));
   assert.ok(sites.posts.includes("/post/postonly"));
   assert.ok(!result.findings.some((f) => f.id === "form-action-dead"));
-  assert.ok(!result.findings.some((f) => /every submission is lost/i.test(f.detail)));
+  assert.ok(
+    !result.findings.some((f) => /every submission is lost/i.test(f.detail)),
+  );
   const probe = result.findings.find((f) => f.id === "form-action-probe-info");
   assert.ok(probe, "info finding expected");
   assert.equal(probe.severity, "info");
-  assert.match(probe.title, /GET not allowed on the form endpoint, normal for POST-only handlers/);
+  assert.match(
+    probe.title,
+    /GET not allowed on the form endpoint, normal for POST-only handlers/,
+  );
 });
 
-test('probe: with no POST tested (scan only), a 404 on the form action stays critical and may say every submission is lost', async () => {
+test("probe: with no POST tested (scan only), a 404 on the form action stays critical and may say every submission is lost", async () => {
   const { result } = await runScan(page(22), {
     linkCheck: false,
     mxCheck: false,
