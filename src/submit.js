@@ -221,7 +221,7 @@ export function planForm(
 }
 
 const SUCCESS_RE =
-  /thank|thanks|success|received|has been sent|was sent|message sent|sent successfully|we(?:'| wi)ll (?:be in touch|get back|contact|respond|reply)|will get back|get back to you|in touch (?:soon|shortly)|submitted|appreciate|merci|message envoy|gracias|mensaje enviado|recibimos|obrigad[oa]|mensagem enviada|danke|nachricht gesendet|vielen dank|grazie|messaggio inviato|terima kasih|shukriya|شکریہ|شكرا|धन्यवाद|谢谢|ありがとう/i;
+  /thank|thanks|success|received|has been sent|was sent|message sent|sent successfully|we(?:'| wi)ll (?:be in touch|get back|contact|respond|reply)|will get back|get back to you|in touch (?:soon|shortly)|submitted|appreciate|merci|message envoy|gracias|mensaje enviado|recibimos|obrigad[oa]|mensagem enviada|danke|nachricht gesendet|vielen dank|grazie|messaggio inviato|terima kasih|shukriya|شکریہ|شكرا|धन्यवाद|谢谢|感谢|收到|ありがとう|送信完了|送信しました|감사|고맙|접수/i; // CJK/Korean words: looks like success, so it is never accepted (allow-list above)
 // "Fatal" wording means the page after submit is a crash page, not an answer: never "delivered", never a leak verdict.
 const FATAL_RE =
   /fatal error|critical error|uncaught|stack ?trace|exception|internal server error|http error 5\d\d|\b5\d\d (?:error|internal)|traceback|undefined (?:index|variable)|syntax error/i;
@@ -344,78 +344,19 @@ function jsonVerdict(body) {
   return { kind: null, values };
 }
 
+const LATIN_SCRIPT = /\p{Script=Latin}/u;
 const asNav = (e) => (typeof e === "string" ? { path: e, nav: false } : e);
 
-// Language gate. The negative lexicon covers English, Spanish, French, German, Portuguese and a few Roman Urdu
-// failure words. Confirmation text in any other language cannot be checked, so it is never reported "accepted".
-const COVERED_LATIN_WORDS = new Set(
-  (
-    // en
-    "the a an and or to of in is are was were be been your you we our us it this that for with on at by from has have will " +
-    "thank thanks message sent received submitted form contact get back soon shortly successfully i my me can not no yes " +
-    "please hello hi page home error failed unable problem try again went wrong something could cannot t s ll re ve d m " +
-    // es
-    "el la los las de del que y en gracias mensaje enviado recibido un una por para con su sus nos ha sido es se lo al o hemos hola " +
-    // fr
-    "le les des et merci envoyé reçu une pour nous vous est votre à au du avec dans sur " +
-    // de
-    "der die das und ist nicht danke nachricht gesendet wir sie ihre ihr ein eine mit für vielen zu im " +
-    // pt
-    "os as do da dos das obrigado obrigada mensagem enviada recebida e em para com seu sua foi não nao é ao"
-  )
-    .split(" ")
-    .filter(Boolean),
-);
-// Words naming a Latin-script language this tool does not cover (Roman Urdu/Hindi, Indonesian, Italian, Dutch, Polish, Turkish).
-const FOREIGN_LATIN_WORDS = new Set(
-  (
-    "shukriya shukria aap apka apki apke hai hain nahi nahin hua bheja gaya masla ghalti dobara koshish mein hum humein " +
-    "bohat bahut lekin abhi bhej diya terima kasih anda sudah berhasil gagal pesan grazie messaggio inviato inviata " +
-    "bedankt verzonden dziękujemy wiadomość wysłano teşekkürler mesajınız gönderildi"
-  ).split(" "),
-);
-const LATIN_SCRIPT = /\p{Script=Latin}/u;
-const NON_LATIN_NAMES = [
-  [/\p{Script=Hiragana}|\p{Script=Katakana}/u, "Japanese"],
-  [/\p{Script=Han}/u, "Han characters (Chinese or Japanese)"],
-  [/\p{Script=Hangul}/u, "Korean"],
-  [/\p{Script=Arabic}/u, "Arabic script (Arabic, Urdu or Persian)"],
-  [/\p{Script=Cyrillic}/u, "Cyrillic"],
-  [/\p{Script=Greek}/u, "Greek"],
-  [/\p{Script=Devanagari}/u, "Devanagari (Hindi)"],
-  [/\p{Script=Hebrew}/u, "Hebrew"],
-  [/\p{Script=Thai}/u, "Thai"],
-];
-
-/**
- * Language the tool cannot check in visible confirmation text, or null. Six or more letters of non-Latin script is
- * substantial. Latin text is also checked (checkLatin): a marker word of an uncovered language, or three or more
- * words with none from the covered languages, is uncheckable.
- */
-export function uncheckableLanguage(text, { checkLatin = true } = {}) {
-  const s = String(text ?? "").normalize("NFKC");
-  const counts = new Map();
-  for (const ch of s) {
-    if (!/[\p{L}\p{M}]/u.test(ch) || LATIN_SCRIPT.test(ch)) continue;
-    const hit = NON_LATIN_NAMES.find(([re]) => re.test(ch));
-    const name = hit ? hit[1] : "non-Latin script";
-    counts.set(name, (counts.get(name) || 0) + 1);
-  }
-  const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  if (total >= 6) {
-    // Japanese mixes kana and kanji: report it as Japanese.
-    if (counts.has("Japanese")) return "Japanese";
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-  }
-  if (!checkLatin) return null;
-  const words = (s.toLowerCase().match(/\p{L}+/gu) || []).filter((w) =>
-    /^[a-z\u00c0-\u024f]+$/u.test(w),
-  );
-  if (words.some((w) => FOREIGN_LATIN_WORDS.has(w)))
-    return "a Latin-script language this tool does not cover";
-  if (words.length >= 3 && !words.some((w) => COVERED_LATIN_WORDS.has(w)))
-    return "a Latin-script language this tool does not cover";
-  return null;
+// Allow-list language gate. "accepted" needs (a) a success phrase from a COVERED language's lexicon (English, Spanish,
+// French, German, Portuguese) in the visible text, and (b) no letter outside the Latin script anywhere in the visible
+// post-submit text. Any other success-looking text is "unconfirmed: confirmation not in a language this tool checks".
+const COVERED_SUCCESS_RE =
+  /thank|thanks|success|received|has been sent|was sent|message sent|sent successfully|we(?:'| wi)ll (?:be in touch|get back|contact|respond|reply)|will get back|get back to you|in touch (?:soon|shortly)|submitted|appreciate|merci|message envoy|gracias|mensaje enviado|recibimos|obrigad[oa]|mensagem enviada|danke|nachricht gesendet|vielen dank/i;
+// True when any letter in the text is outside the Latin script (Japanese, Hangul, Han, Arabic script, Cyrillic, Greek, ...).
+function hasNonLatinLetter(text) {
+  for (const ch of String(text ?? ""))
+    if (/\p{L}/u.test(ch) && !LATIN_SCRIPT.test(ch)) return true;
+  return false;
 }
 
 /**
@@ -593,10 +534,10 @@ export function classifyOutcome({
   // "accepted" needs positive evidence AND no negative cue. Any negative cue: error-message without success wording, unconfirmed with it.
   // Negative cues: the visible text, or for JSON the string values only.
   const visible = json ? json.values : scope;
-  const textConfirm = SUCCESS_RE.test(scope);
-  const urlConfirm = urlChanged && THANKS_URL.test(finalUrl);
+  const textSuccess = SUCCESS_RE.test(visible); // any language: decides whether the text LOOKS like success
+  const urlConfirm = urlChanged && THANKS_URL.test(finalUrl); // supporting evidence only
   const jsonOk = json?.kind === "ok";
-  const positive = textConfirm || urlConfirm || jsonOk;
+  const positive = textSuccess || urlConfirm || jsonOk;
   if (ERROR_RE.test(visible)) {
     return {
       status: positive ? "unconfirmed" : "error-message",
@@ -608,35 +549,33 @@ export function classifyOutcome({
       redirect: redirectUrl,
     };
   }
-  // Text in a language the tool cannot check is never "accepted", whatever success word it contains.
-  const lang = uncheckableLanguage(json ? json.values : scope, {
-    checkLatin: !json,
-  });
-  if (lang) {
-    return {
-      status: "unconfirmed",
-      detail: `unconfirmed: confirmation text is in a language this tool can't check (${lang}); check manually or use --imap. The server answered HTTP ${last.status}; whether the lead was accepted is not shown.`,
-      evidence,
-      http: last.status,
-      redirect: redirectUrl,
-    };
-  }
-  if (positive) {
-    const seen =
-      textConfirm || urlConfirm
-        ? `the visitor saw a confirmation${redirectUrl ? " on " + safePath(redirectUrl) : ""}`
-        : "the server reported success in JSON";
+  // Allow-list. (a) a covered-language success phrase in the visible text; (b) no non-Latin letter anywhere in the
+  // visible post-submit text. A JSON answer that carries no text at all (a bare ok:true) has no language to check.
+  const jsonText = json ? json.values : "";
+  const coveredHit = COVERED_SUCCESS_RE.test(visible);
+  const nonLatin = hasNonLatinLetter(`${textAfter}\n${jsonText}`);
+  const structuredOk = jsonOk && !jsonText.trim();
+  if (!nonLatin && (coveredHit || structuredOk)) {
+    const seen = coveredHit
+      ? `the visitor saw a confirmation${redirectUrl ? " on " + safePath(redirectUrl) : ""}`
+      : "the server reported success in JSON";
     return {
       status: "accepted",
       detail: `Accepted by the site, not verified: run with --imap to confirm delivery. The server answered HTTP ${last.status} and ${seen}.`,
       evidence,
       http: last.status,
       redirect: redirectUrl,
-      confirmation: textConfirm
-        ? "message"
-        : urlConfirm
-          ? "thank-you-url"
-          : "json",
+      confirmation: coveredHit ? "message" : "json",
+    };
+  }
+  // Anything else that looks like success (a success word in any language, or a thank-you page with text) is unconfirmed.
+  if (textSuccess || (urlConfirm && scope.trim())) {
+    return {
+      status: "unconfirmed",
+      detail: `unconfirmed: confirmation not in a language this tool checks. The server answered HTTP ${last.status}; whether the lead was accepted is not shown. Check manually or use --imap.`,
+      evidence,
+      http: last.status,
+      redirect: redirectUrl,
     };
   }
   return {
@@ -979,6 +918,7 @@ async function doOneForm(
     return route.abort("blockedbyclient");
   };
   let armed = false;
+  let submissionsTried = 0; // non-GET requests to an allowed host after arming: only the first may leave
 
   await ctx.route("**/*", async (route) => {
     const req = route.request();
@@ -1007,6 +947,17 @@ async function doOneForm(
         return abortOurs(route, req);
       }
       return route.continue();
+    }
+    // 1b. One submission per form. A page can fire two lead POSTs (a fetch() from a submit handler plus the native
+    //     submit). The first non-GET after arming may proceed to the gates below; every later one is aborted here.
+    if (armed && !safeMethod) {
+      submissionsTried++;
+      if (submissionsTried > 1) {
+        blockedBeacons.push(
+          `blocked: second submission for the same form (${req.method()} ${u.host}${u.pathname})`,
+        );
+        return abortOurs(route, req);
+      }
     }
     // 2. Endpoint gate: judge what the request would DO by its real URL, whatever the DOM claimed.
     const judged =
@@ -1434,6 +1385,10 @@ async function doOneForm(
       blockedRequests: blockedBeacons.slice(0, 20),
       popups: popups.length,
     });
+    if (submissionsTried > 1) {
+      record.submissionsAttempted = submissionsTried;
+      record.detail = `${record.detail} The page tried to send ${submissionsTried} submissions; only the first was let through.`;
+    }
   } catch (err) {
     if (err instanceof RailError || err.soft) {
       record.status = "skipped";

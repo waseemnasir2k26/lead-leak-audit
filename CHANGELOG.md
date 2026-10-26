@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.3 - 2026-10-26
+
+Closes two ways one lead could be sent twice or a non-English confirmation could be counted as delivered. Upgrade if you act on submission results.
+
+- **One form, one lead.** A page that fetch()es the lead from its submit handler and then lets the native submit go out used to send two POSTs. After the click, the first non-GET request to an allowed host is the lead; every later one is aborted with "blocked: second submission for the same form". If the page tried more than once, the outcome says "The page tried to send N submissions; only the first was let through." and the record carries `submissionsAttempted`. Test: `test/one-submission.test.js` (the server receives exactly one POST).
+- **Confirmations are an allow-list.** "accepted" needs (a) a success phrase from a covered language (English, Spanish, French, German, Portuguese) in the visible text, and (b) no letter outside the Latin script anywhere in the visible post-submit text. A thank-you URL is supporting evidence only. Any other success-looking text, including "ありがとう", "谢谢" and "감사합니다" on any page, is "unconfirmed: confirmation not in a language this tool checks". The six-letter threshold is removed. Test: `test/confirm-language.test.js`.
+
 ## 1.2.2 - 2026-10-26
 
 Closes two ways a lead could be counted wrongly or sent twice. Upgrade if you act on submission results.
