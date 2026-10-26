@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.4 - 2026-10-26
+
+Closes a false "accepted" after a redirect. Upgrade if you act on submission results.
+
+- **A redirect is judged on the text it added, not the whole destination page.** After a POST that redirects, only text that was not on the pre-submit page counts. A success phrase must sit in a new line of 200 characters or fewer.
+- **A redirect to the home or index page is never a confirmation.** A 302 to `/`, `/home`, `/index` or `/index.html` that shows "Thanks for visiting our site" is "unconfirmed", not "accepted". A redirect to a thank-you URL, or to any other page with a new success line, is accepted as before (not verified; use `--imap`).
+- **Emoji is not a non-Latin letter.** "Thank you! 🎉" in English is accepted; a test documents it.
+- Tests: `test/redirect-outcome.test.js` (home redirect unconfirmed; `/thank-you` accepted; `/contact?sent=1` with new text accepted) and `test/confirm-language.test.js`.
+
 ## 1.2.3 - 2026-10-26
 
 Closes two ways one lead could be sent twice or a non-English confirmation could be counted as delivered. Upgrade if you act on submission results.

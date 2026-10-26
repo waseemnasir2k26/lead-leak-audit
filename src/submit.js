@@ -293,6 +293,15 @@ export const POSTED_STATUSES = new Set([
 ]);
 const THANKS_URL =
   /thank|success|confirm|sent|received|done|merci|gracias|danke|grazie|obrigad/i;
+// Home or index landing path (/, /home, /index, /index.html): a redirect there is never a confirmation.
+const HOME_PATH_RE = /^\/(home|index(\.[a-z]{2,5})?)?\/?$/i;
+function pathOf(u) {
+  try {
+    return new URL(u).pathname;
+  } catch {
+    return "";
+  }
+}
 
 export function newLines(before, after) {
   const seen = new Set(
@@ -506,7 +515,9 @@ export function classifyOutcome({
   const last =
     relevant.filter((r) => r.status !== null).at(-1) ||
     relevant[relevant.length - 1];
-  const scope = urlChanged ? textAfter : newLines(textBefore, textAfter);
+  // Only text that was NOT on the pre-submit page counts, even after a redirect. Judging the whole destination page let
+  // generic home-page text ("Thanks for visiting our site") count as a confirmation.
+  const scope = newLines(textBefore, textAfter);
   const redirectUrl = urlChanged ? finalUrl : null;
   // A JSON answer decides for itself: ok:false, success:false, status:"error" or a filled error(s) key is an error, whatever the text says.
   const jsonRec = [...relevant]
@@ -552,7 +563,16 @@ export function classifyOutcome({
   // Allow-list. (a) a covered-language success phrase in the visible text; (b) no non-Latin letter anywhere in the
   // visible post-submit text. A JSON answer that carries no text at all (a bare ok:true) has no language to check.
   const jsonText = json ? json.values : "";
-  const coveredHit = COVERED_SUCCESS_RE.test(visible);
+  // After a redirect the success phrase must sit in a short, prominent new line (<= 200 chars), and a redirect to the
+  // site's home or index page never counts: generic welcome text there is not a confirmation of this lead.
+  const landedHome = urlChanged && HOME_PATH_RE.test(pathOf(finalUrl));
+  const coveredSource = urlChanged
+    ? visible
+        .split("\n")
+        .filter((l) => l.trim().length <= 200)
+        .join("\n")
+    : visible;
+  const coveredHit = !landedHome && COVERED_SUCCESS_RE.test(coveredSource);
   const nonLatin = hasNonLatinLetter(`${textAfter}\n${jsonText}`);
   const structuredOk = jsonOk && !jsonText.trim();
   if (!nonLatin && (coveredHit || structuredOk)) {
@@ -566,6 +586,15 @@ export function classifyOutcome({
       http: last.status,
       redirect: redirectUrl,
       confirmation: coveredHit ? "message" : "json",
+    };
+  }
+  if (landedHome && (textSuccess || COVERED_SUCCESS_RE.test(visible))) {
+    return {
+      status: "unconfirmed",
+      detail: `unconfirmed: the site redirected to its home page (${safePath(finalUrl)}), which shows generic text. That text is not a confirmation of this lead. Check the thank-you page manually or use --imap.`,
+      evidence,
+      http: last.status,
+      redirect: redirectUrl,
     };
   }
   // Anything else that looks like success (a success word in any language, or a thank-you page with text) is unconfirmed.

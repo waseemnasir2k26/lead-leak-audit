@@ -110,3 +110,9 @@ test("Covered Spanish success is accepted", () => {
   const o = run("Gracias, su mensaje ha sido enviado");
   assert.equal(o.status, "accepted");
 });
+
+// Documented behaviour: an emoji is not a letter in any script, so an English thank-you with an emoji is accepted.
+test("English 'Thank you! 🎉' is accepted (emoji is not a non-Latin letter; intended)", () => {
+  const o = run("Thank you! 🎉");
+  assert.equal(o.status, "accepted");
+});
