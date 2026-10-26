@@ -220,7 +220,16 @@ const SUCCESS_RE =
 const FATAL_RE =
   /fatal error|critical error|uncaught|stack ?trace|exception|internal server error|http error 5\d\d|\b5\d\d (?:error|internal)|traceback|undefined (?:index|variable)|syntax error/i;
 const ERROR_RE =
-  /something went wrong|went wrong|failed|unable to|could not|couldn't|not sent|try again|error occurred|server error|invalid|spam|fatal error|critical error|uncaught|stack ?trace|exception/i;
+  /something went wrong|went wrong|failed|failed to send|unable to|could not|couldn't|could not be sent|couldn't be sent|not sent|try again|error occurred|server error|invalid|spam|fatal error|critical error|uncaught|stack ?trace|exception/i;
+// Statuses for which a real POST to the form action was sent in this run.
+export const POSTED_STATUSES = new Set([
+  "delivered",
+  "delivered-redirect-blocked",
+  "unconfirmed",
+  "error-message",
+  "failed",
+  "timeout",
+]);
 const THANKS_URL =
   /thank|success|confirm|sent|received|done|merci|gracias|danke|grazie|obrigad/i;
 
@@ -388,10 +397,14 @@ export function classifyOutcome({
       redirect: redirectUrl,
     };
   }
-  if (ERROR_RE.test(scope) && !SUCCESS_RE.test(scope)) {
+  // An error message always wins over success wording: "Thanks for your message, but it could not be sent" is never delivered.
+  if (ERROR_RE.test(scope)) {
+    const both = SUCCESS_RE.test(scope);
     return {
-      status: "error-message",
-      detail: `The form answered HTTP ${last.status} but the page now shows an error message: "${firstLine(scope, ERROR_RE)}".`,
+      status: both ? "unconfirmed" : "error-message",
+      detail: both
+        ? `The form answered HTTP ${last.status} and the page shows a success-style word together with an error message ("${firstLine(scope, ERROR_RE)}"). Delivery is unverified and must not be read as delivered; re-test the form by hand.`
+        : `The form answered HTTP ${last.status} but the page now shows an error message: "${firstLine(scope, ERROR_RE)}".`,
       evidence,
       http: last.status,
       redirect: redirectUrl,

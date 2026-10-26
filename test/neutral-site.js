@@ -29,6 +29,11 @@ export const PAGES = {
   11: contactForm("/post/redir302"),
   12: `<h2>Contact us</h2><form id="jf" action="/post/ok" method="post"><input name="name" placeholder="Name"><input type="email" name="email" placeholder="Email"><textarea name="message" placeholder="How can we help?"></textarea><button type="submit">Send message</button></form><script>document.getElementById('jf').addEventListener('submit',function(e){e.preventDefault();fetch('/post/ok',{method:'POST',body:new URLSearchParams(new FormData(this))}).then(function(){location.href='/cart'})})</script>`,
   13: contactForm("/post/meta"),
+  19: contactForm("/post/err-both"),
+  20: contactForm("/post/err-only"),
+  21: contactForm("/post/ok-sent"),
+  // POST-only handler: a GET/HEAD probe is 404, but a real POST is accepted
+  22: contactForm("/post/postonly"),
   // ---- frames
   15: `<h1>Welcome</h1><iframe src="/frame1" width="400" height="400"></iframe>`,
   16: `<h1>Welcome</h1><iframe src="__FOREIGN__/embed/typeform.com/to/abc" width="400" height="300"></iframe>`,
@@ -64,6 +69,16 @@ export async function startNeutralSites() {
             "<b>Fatal error</b>: Uncaught Exception: SMTP connect() failed in /var/www/html/wp-content/plugins/forms/mail.php:88\nStack trace:\n#0 {main}",
           );
         if (u.pathname === "/post/plain") return html("<p>Welcome</p>");
+        if (u.pathname === "/post/err-both")
+          return html(
+            "<p>Thanks for your message, but it could not be sent. Please try again.</p>",
+          );
+        if (u.pathname === "/post/err-only")
+          return html("<p>Error: please try again</p>");
+        if (u.pathname === "/post/ok-sent")
+          return html("<p>Thank you! Your message has been sent.</p>");
+        if (u.pathname === "/post/postonly")
+          return html("<p>Thank you, we received your message</p>");
         if (u.pathname === "/post/redir302") {
           r.writeHead(302, { location: `${FOREIGN}/after` });
           return r.end();
@@ -78,6 +93,10 @@ export async function startNeutralSites() {
     }
     gets.push(u.pathname);
     if (u.pathname === "/robots.txt") {
+      r.writeHead(404);
+      return r.end();
+    }
+    if (u.pathname === "/post/postonly") {
       r.writeHead(404);
       return r.end();
     }

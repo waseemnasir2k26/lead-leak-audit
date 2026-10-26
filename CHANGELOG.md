@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.2 - 2026-10-26
+
+Fixes two report-truth bugs found in review. Upgrade if you used `submit`.
+
+- **An error message is never "delivered".** Error wording now wins over success wording. "Thanks for your message, but it could not be sent. Please try again." is "unconfirmed"; error wording with no success wording (for example "Error: please try again") is "error-message". ERROR_RE gains "could not be sent", "couldn't be sent", "failed to send" (the rest of the list is unchanged). Covered by neutral fixtures.
+- **No contradiction between the probe and the submission.** A HEAD probe that returns 404 or unreachable for a form action is no longer a critical "every submission is lost" finding when a real test POST to that action was sent in the same run. It becomes info: "GET not allowed on the form endpoint, normal for POST-only handlers"; the POST result decides. With no POST tested (scan only), the critical finding is unchanged.
+
 ## 1.1.1 - 2026-10-25
 
 - **Classifier is a true AND.** Contact intent (heading, button, label, legend or recognised form-builder markup) AND a message/details field AND an email or phone field. A forum reply ("Re:" heading, "Write your answer"), a donation (number field plus $10/$25 radios), an RSVP (yes/no select) and rating/score inputs are rejected; so are currency symbols or amounts in labels, options and placeholders, yes/no/attending radios and selects, reply/answer/thread/topic wording, and any number or range input of unknown purpose. Unknown number inputs are never filled. Multi-step forms (a "Next" button, or hidden card fields) are rejected with "test manually". Tested with neutral fixture names (`/pageN`, title "Welcome").

@@ -10,6 +10,7 @@ import {
   matchesOnly,
   validateOnly,
   runSubmissions,
+  POSTED_STATUSES,
   summarizePlan,
 } from "./submit.js";
 import { submissionFindings, replyFindings } from "./findings.js";
@@ -158,7 +159,13 @@ export async function runSubmit(url, opts = {}) {
       ...submissions.flatMap((s) => submissionFindings(s, { deadActions })),
       ...replyFindings(replies),
     ];
-    const final = rescore(result, extraFindings);
+    // A GET/HEAD probe of a form action says nothing about the lead path once a real POST went to that action.
+    const postedActions = new Set(
+      submissions
+        .filter((s) => s.action && (POSTED_STATUSES.has(s.status) || s.http != null))
+        .map((s) => s.action),
+    );
+    const final = rescore(result, extraFindings, { postedActions });
     return {
       result: final,
       extra: {

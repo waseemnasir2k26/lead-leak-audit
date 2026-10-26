@@ -275,3 +275,46 @@ test('--only: "", "/", "." and other broad values are refused before anything ha
   );
   assert.equal(sites.posts.length, before);
 });
+
+test('outcome: "Thanks for your message, but it could not be sent. Please try again." is unconfirmed, never delivered', async () => {
+  const { sub } = await run(19, "/post/err-both");
+  assert.equal(sub.status, "unconfirmed", JSON.stringify(sub));
+  assert.notEqual(sub.status, "delivered");
+});
+
+test('outcome: "Thank you! Your message has been sent." is delivered', async () => {
+  const { sub } = await run(21, "/post/ok-sent");
+  assert.equal(sub.status, "delivered", JSON.stringify(sub));
+  assert.equal(sub.confirmation, "message");
+});
+
+test('outcome: "Error: please try again" is error-message', async () => {
+  const { sub } = await run(20, "/post/err-only");
+  assert.equal(sub.status, "error-message", JSON.stringify(sub));
+});
+
+test("probe: a 404 on the GET/HEAD probe of a POST-only action is info when a real POST was sent, and the POST result counts", async () => {
+  sites.posts.length = 0;
+  const { sub, result } = await run(22, "/post/postonly");
+  assert.equal(sub.status, "delivered", JSON.stringify(sub));
+  assert.ok(sites.posts.includes("/post/postonly"));
+  assert.ok(!result.findings.some((f) => f.id === "form-action-dead"));
+  assert.ok(!result.findings.some((f) => /every submission is lost/i.test(f.detail)));
+  const probe = result.findings.find((f) => f.id === "form-action-probe-info");
+  assert.ok(probe, "info finding expected");
+  assert.equal(probe.severity, "info");
+  assert.match(probe.title, /GET not allowed on the form endpoint, normal for POST-only handlers/);
+});
+
+test('probe: with no POST tested (scan only), a 404 on the form action stays critical and may say every submission is lost', async () => {
+  const { result } = await runScan(page(22), {
+    linkCheck: false,
+    mxCheck: false,
+    settleMs: 150,
+    maxPages: 1,
+  });
+  const dead = result.findings.find((f) => f.id === "form-action-dead");
+  assert.ok(dead, "dead-action finding expected without a POST");
+  assert.equal(dead.severity, "critical");
+  assert.match(dead.detail, /every submission is lost/i);
+});

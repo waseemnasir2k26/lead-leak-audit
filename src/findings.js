@@ -19,6 +19,7 @@ const contactish =
  */
 export function deriveFindings(inventory, checks = {}, opts = {}) {
   counter = 0;
+  const posted = opts.postedActions || new Set();
   const out = [];
   const links = checks.links || {};
   const mx = checks.mx || {};
@@ -78,7 +79,22 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
     const ev = `action=${f.actionAttr === null ? "(none)" : short(f.actionAttr)} method=${f.method}`;
     const a = actions[f.actionAbs];
     if (a) {
-      if (a.status === 404 || a.status === 410 || (a.status === 0 && a.error)) {
+      const probeDead = a.status === 404 || a.status === 410 || (a.status === 0 && a.error);
+      if (probeDead && posted.has(f.actionAbs)) {
+        // The HEAD probe is not the lead path: a real POST to this action was sent in this run, so its result decides.
+        out.push(
+          mk({
+            id: "form-action-probe-info",
+            severity: "info",
+            category: "forms",
+            title: "GET not allowed on the form endpoint, normal for POST-only handlers",
+            detail: `The ${name} posts to ${short(f.actionAbs)}. A HEAD probe returned ${a.status ? "HTTP " + a.status : "an error (" + a.error + ")"}, but a real test POST to that address was sent in this run; the submission result below is the one that counts.`,
+            fix: "No action for the probe itself. Check the submission result for this form.",
+            where,
+            evidence: ev,
+          }),
+        );
+      } else if (probeDead) {
         out.push(
           mk({
             id: "form-action-dead",

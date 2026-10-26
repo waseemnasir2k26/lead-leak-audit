@@ -7,7 +7,7 @@ import { deriveFindings } from "./findings.js";
 import { computeScore } from "./score.js";
 import { fetchRobots, checkLink, checkMx, USER_AGENT } from "./net.js";
 
-export const VERSION = "1.1.1";
+export const VERSION = "1.1.2";
 const SKIP_EXT =
   /\.(?:pdf|jpe?g|png|gif|webp|svg|ico|zip|rar|7z|mp4|mov|mp3|wav|css|js|json|xml|txt|docx?|xlsx?|pptx?|woff2?|ttf)(?:[?#]|$)/i;
 const PRIORITY =
@@ -303,9 +303,10 @@ export async function scan(startUrl, opts = {}) {
 }
 
 /** Recompute findings/score after submit/reply results were appended. */
-export function rescore(result, extraFindings) {
+export function rescore(result, extraFindings, { postedActions } = {}) {
   const base = deriveFindings(result.inventory, result.checks, {
     origin: result.meta.origin,
+    postedActions,
   });
   const findings = [...base, ...extraFindings].map((f, i) => ({
     ...f,
