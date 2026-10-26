@@ -9,12 +9,15 @@ const base = {
   finalUrl: "https://acme.test/contact",
   textBefore: "Contact us",
 };
-const run = (textAfter, finalUrl = base.finalUrl) =>
+// extra.formGone = true: the submitted form is gone or hidden after submit (an anchor). Without an anchor a
+// confirmation phrase is unconfirmed (see confirm-allowlist.test.js).
+const run = (textAfter, finalUrl = base.finalUrl, extra = {}) =>
   classifyOutcome({
     ...base,
     finalUrl,
     textAfter: `Contact us\n${textAfter}`,
     relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
+    ...extra,
   });
 const LANG = /^unconfirmed: confirmation not in a language this tool checks\./;
 
@@ -90,13 +93,20 @@ test("Roman Urdu success (no negative word) is unconfirmed: the language is not 
   assert.match(o.detail, LANG);
 });
 
-test("English success is accepted", () => {
-  const o = run("Thank you, your message has been sent");
+// formGone: true = the submitted form is gone or hidden after submit (an anchor). Without an anchor a confirmation phrase is unconfirmed.
+const HIDDEN = { formGone: true };
+test("English success is accepted when the form is hidden (anchor)", () => {
+  const o = run("Thank you, your message has been sent", base.finalUrl, HIDDEN);
   assert.equal(o.status, "accepted");
 });
 
+// "Thank you for your message" has no received/sent verb, so it is not a submission-confirmation phrase: unconfirmed.
+// "we received your message" is the phrase that counts; the thank-you address is the anchor.
 test("English text on /thank-you is accepted", () => {
-  const o = run("Thank you for your message", "https://acme.test/thank-you");
+  const o = run(
+    "Thank you, we received your message",
+    "https://acme.test/thank-you",
+  );
   assert.equal(o.status, "accepted");
   assert.equal(o.redirect, "https://acme.test/thank-you");
 });
@@ -106,13 +116,17 @@ test("a /thank-you URL with no visible text is not accepted on its own", () => {
   assert.equal(o.status, "unconfirmed");
 });
 
-test("Covered Spanish success is accepted", () => {
-  const o = run("Gracias, su mensaje ha sido enviado");
+test("Covered Spanish success is accepted when the form is hidden (anchor)", () => {
+  const o = run("Gracias, su mensaje ha sido enviado", base.finalUrl, HIDDEN);
   assert.equal(o.status, "accepted");
 });
 
 // Documented behaviour: an emoji is not a letter in any script, so an English thank-you with an emoji is accepted.
-test("English 'Thank you! 🎉' is accepted (emoji is not a non-Latin letter; intended)", () => {
-  const o = run("Thank you! 🎉");
+test("English 'Thank you! 🎉 We received your message' is accepted when the form is hidden (emoji is not a non-Latin letter; intended)", () => {
+  const o = run(
+    "Thank you! 🎉 We received your message",
+    base.finalUrl,
+    HIDDEN,
+  );
   assert.equal(o.status, "accepted");
 });

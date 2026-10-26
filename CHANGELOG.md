@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.5 - 2026-10-26
+
+Closes two false "accepted" results found in the R7 judge review. Upgrade if you act on submission results.
+
+- **"accepted" needs a submission-confirmation phrase, not a bare thank-you.** The phrase must name the submission (message, request, enquiry, inquiry, submission, form, details, or a covered-language equivalent) and say it was received, sent or submitted ("We received your message", "Message sent", "Tu mensaje ha sido enviado", "Nachricht gesendet"). Or it must promise a reply ("we'll be in touch", "we will get back to you"). "Thank you for subscribing", "Thanks for reading" and "Thanks for visiting" are not confirmations. The allow-list covers English, Spanish, French, German and Portuguese.
+- **And an anchor ties it to this submission.** One of: (i) the submitted form is gone, hidden or replaced after submit; (ii) the phrase sits in a `role="status"`, `role="alert"` or `aria-live` region, or beside the form; (iii) the URL changed to a thank-you address (last path segment `thank-you`, `thanks`, `success`, `sent`, `confirmation` or `submitted`, optionally `.html`, or a query `sent=1`, `success=1` or `submitted=1`); (iv) a JSON answer with `ok: true`. With no anchor the outcome is "unconfirmed: the page shows a confirmation-style line ... but nothing ties it to this submission".
+- **Blocked cases from the review:** a redirect to `/blog/thank-you-to-our-sponsors` with "Thanks for reading our sponsor roundup." is unconfirmed; a 200 page where the form stays and a timer adds "Thank you for subscribing to our newsletter!" is unconfirmed.
+- **Behaviour changes to know about:** "Thank you for your message" on its own is now unconfirmed (no received/sent verb). A success line on a page where the form is still shown, with no status region or thank-you address, is unconfirmed. An English "Thank you! 🎉" is accepted only with a confirmation phrase and an anchor.
+- Tests: `test/confirm-allowlist.test.js` (both blocker repros end to end; status-region, form-hidden and thank-you-address anchors; the covered-language allow-list). Updated: `test/submit.test.js` and `test/confirm-language.test.js` (accepted expectations now carry an anchor or a confirmation phrase).
+
 ## 1.2.4 - 2026-10-26
 
 Closes a false "accepted" after a redirect. Upgrade if you act on submission results.

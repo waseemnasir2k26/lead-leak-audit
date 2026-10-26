@@ -361,6 +361,69 @@ const asNav = (e) => (typeof e === "string" ? { path: e, nav: false } : e);
 // post-submit text. Any other success-looking text is "unconfirmed: confirmation not in a language this tool checks".
 const COVERED_SUCCESS_RE =
   /thank|thanks|success|received|has been sent|was sent|message sent|sent successfully|we(?:'| wi)ll (?:be in touch|get back|contact|respond|reply)|will get back|get back to you|in touch (?:soon|shortly)|submitted|appreciate|merci|message envoy|gracias|mensaje enviado|recibimos|obrigad[oa]|mensagem enviada|danke|nachricht gesendet|vielen dank/i;
+// SUBMISSION-CONFIRMATION allow-list (v1.2.5). A thank-you word is not enough: the phrase must name the submission
+// (message / request / enquiry / submission / form / details, or a covered-language equivalent) AND say it was received,
+// sent or submitted. Or it must promise a reply ("we'll be in touch", ...). "Thank you for subscribing", "Thanks for
+// reading", "Thanks for visiting" never match. Covered languages: en, es, fr, de, pt.
+const CONFIRM_SUBJECT =
+  "(?:messages?|requests?|enquir(?:y|ies)|inquir(?:y|ies)|submissions?|forms?|details|mensajes?|consultas?|solicitud(?:es)?|formulario|demande|requ[êe]te|nachricht(?:en)?|anfrage|formular|mensagem(?:ns)?|solicita[çc][ãa]o|formul[áa]rio|pedido)";
+const CONFIRM_VERB =
+  "(?:received|sent|submitted|got|envoy[ée]e?s?|enviad[oa]s?|re[çc]ue?s?|recibid[oa]s?|erhalten|gesendet|eingegangen|recebid[oa]s?)";
+const CONFIRM_RE = new RegExp(
+  [
+    // subject, then the verb: "Your message has been sent", "Message sent", "tu mensaje ha sido enviado"
+    `(?<!\\p{L})${CONFIRM_SUBJECT}(?!\\p{L})[^\\n.!?]{0,40}?(?<!\\p{L})${CONFIRM_VERB}(?!\\p{L})`,
+    // verb, then the subject: "we received your message", "hemos recibido tu mensaje", "Ihre Nachricht erhalten"
+    `(?<!\\p{L})${CONFIRM_VERB}(?!\\p{L})[^\\n.!?]{0,40}?(?<!\\p{L})${CONFIRM_SUBJECT}(?!\\p{L})`,
+    // "we have your message", "we've got your details", "recebemos a sua mensagem" (receipt word + subject)
+    `(?<!\\p{L})(?:we(?:'|’)?ve|we have|we got|hemos|avons|haben|recebemos|temos)(?!\\p{L})[^\\n.!?]{0,30}?(?<!\\p{L})(?:your|tu|su|sua|seu|votre|ihre|vos)\\s+${CONFIRM_SUBJECT}(?!\\p{L})`,
+    // promised reply
+    "(?<!\\p{L})we(?:'|’)?ll (?:be in touch|get back|contact you|reply|respond)|(?<!\\p{L})we will (?:be in touch|get back|contact you|reply|respond)",
+    // standalone covered phrases from the allow-list
+    "nous avons bien re[çc]u|wir haben[^\\n.!?]{0,40}erhalten",
+  ].join("|"),
+  "iu",
+);
+// Anchor (iii): a thank-you ADDRESS after a navigation (last path segment exact, or a success flag in the query).
+const THANKS_PATH_SEGMENT_RE =
+  /^(thank-?you|thanks|success|sent|confirmation|submitted)(\.html?)?$/i;
+const THANKS_QUERY_RE = /^(sent|success|submitted)$/i;
+function thanksAddress(u) {
+  try {
+    const x = new URL(u);
+    const seg = x.pathname.replace(/\/+$/, "").split("/").pop() || "";
+    if (THANKS_PATH_SEGMENT_RE.test(seg)) return true;
+    for (const [k, v] of x.searchParams)
+      if (THANKS_QUERY_RE.test(k) && v === "1") return true;
+  } catch {
+    /* not a URL */
+  }
+  return false;
+}
+// The confirmation must be tied to THIS submission. Returns the anchor kind, or null when none can be determined
+// (the caller then reports unconfirmed). (i) the submitted form is gone, hidden or replaced; (ii) the phrase sits in a
+// status / alert / aria-live region or beside the form; (iii) the page navigated to a thank-you address; (iv) JSON ok:true.
+function anchorOf({
+  textBefore,
+  liveText,
+  nearText,
+  formGone,
+  urlChanged,
+  finalUrl,
+  jsonOk,
+}) {
+  if (formGone) return "form-gone";
+  if (
+    CONFIRM_RE.test(
+      newLines(textBefore, `${liveText || ""}\n${nearText || ""}`),
+    )
+  )
+    return "status-area";
+  if (urlChanged && thanksAddress(finalUrl)) return "thank-you-address";
+  if (jsonOk) return "json";
+  return null;
+}
+
 // True when any letter in the text is outside the Latin script (Japanese, Hangul, Han, Arabic script, Cyrillic, Greek, ...).
 function hasNonLatinLetter(text) {
   for (const ch of String(text ?? ""))
@@ -387,6 +450,8 @@ export function classifyOutcome({
   textBefore = "",
   textAfter = "",
   formGone = false,
+  liveText = "", // text of role=status / role=alert / aria-live regions after submit
+  nearText = "", // text of the form's own container after submit (never <body>)
 }) {
   const urlChanged =
     !!finalUrl &&
@@ -572,12 +637,22 @@ export function classifyOutcome({
         .filter((l) => l.trim().length <= 200)
         .join("\n")
     : visible;
-  const coveredHit = !landedHome && COVERED_SUCCESS_RE.test(coveredSource);
+  // v1.2.5: the phrase must be a submission confirmation (CONFIRM_RE, not a bare thank-you) AND tied to this submission.
+  const coveredHit = !landedHome && CONFIRM_RE.test(coveredSource);
   const nonLatin = hasNonLatinLetter(`${textAfter}\n${jsonText}`);
   const structuredOk = jsonOk && !jsonText.trim();
-  if (!nonLatin && (coveredHit || structuredOk)) {
+  const anchor = anchorOf({
+    textBefore,
+    liveText,
+    nearText,
+    formGone,
+    urlChanged,
+    finalUrl,
+    jsonOk,
+  });
+  if (!nonLatin && (structuredOk || (coveredHit && anchor))) {
     const seen = coveredHit
-      ? `the visitor saw a confirmation${redirectUrl ? " on " + safePath(redirectUrl) : ""}`
+      ? `the visitor saw a confirmation (anchor: ${anchor})${redirectUrl ? " on " + safePath(redirectUrl) : ""}`
       : "the server reported success in JSON";
     return {
       status: "accepted",
@@ -597,11 +672,22 @@ export function classifyOutcome({
       redirect: redirectUrl,
     };
   }
+  // A submission-confirmation phrase that no anchor ties to this submission (a timer-injected or generic line while the
+  // form is still shown and no status region changed). Never accepted.
+  if (coveredHit && !nonLatin && !anchor) {
+    return {
+      status: "unconfirmed",
+      detail: `unconfirmed: the page shows a confirmation-style line ("${firstLine(coveredSource, CONFIRM_RE)}") but nothing ties it to this submission: the form is still on the page, no status or alert message changed, and the address is not a thank-you page. Check manually or use --imap.`,
+      evidence,
+      http: last.status,
+      redirect: redirectUrl,
+    };
+  }
   // Anything else that looks like success (a success word in any language, or a thank-you page with text) is unconfirmed.
   if (textSuccess || (urlConfirm && scope.trim())) {
     return {
       status: "unconfirmed",
-      detail: `unconfirmed: confirmation not in a language this tool checks. The server answered HTTP ${last.status}; whether the lead was accepted is not shown. Check manually or use --imap.`,
+      detail: `unconfirmed: confirmation not in a language this tool checks. The wording shown is not a submission-confirmation phrase. The server answered HTTP ${last.status}; whether the lead was accepted is not shown. Check manually or use --imap.`,
       evidence,
       http: last.status,
       redirect: redirectUrl,
@@ -609,7 +695,7 @@ export function classifyOutcome({
   }
   return {
     status: "unconfirmed",
-    detail: `The server accepted the request (HTTP ${last.status}) but there is no positive evidence of delivery: no thank-you message and no thank-you page${formGone ? " (the form disappeared, which proves nothing)" : ""}.`,
+    detail: `The server accepted the request (HTTP ${last.status}) but there is no positive evidence of delivery: no thank-you message and no thank-you page${formGone ? " (the form disappeared, but no submission-confirmation phrase was shown)" : ""}.`,
     evidence,
     http: last.status,
     redirect: redirectUrl,
@@ -1348,6 +1434,8 @@ async function doOneForm(
     let validationBlocked = false;
     let formGone = false;
     let textAfter = "";
+    let liveText = "";
+    let nearText = "";
     try {
       // The result lands in the frame that held the form, or in the popup.
       const reader = resultPage === page ? frame : resultPage;
@@ -1368,9 +1456,34 @@ async function doOneForm(
       }, idx);
       formGone = state.gone;
       validationBlocked = state.invalid;
+      // Anchor text (v1.2.5): status / alert / aria-live regions, and the form's own container (never <body>).
+      const areas = await reader.evaluate(
+        (i) => {
+          const live = [
+            ...document.querySelectorAll(
+              '[role="status"],[role="alert"],[aria-live]:not([aria-live="off"])',
+            ),
+          ]
+            .map((e) => e.innerText || "")
+            .join("\n");
+          const f = i < 0 ? null : document.querySelectorAll("form")[i];
+          const host = f?.parentElement;
+          const near =
+            host && host !== document.body && host !== document.documentElement
+              ? host.innerText || ""
+              : "";
+          return { live: live.slice(0, 4000), near: near.slice(0, 4000) };
+        },
+        resultPage === page ? idx : -1,
+      );
+      liveText = areas.live;
+      nearText = areas.near;
     } catch {
       formGone = true; // page navigated away mid-evaluate
     }
+    // v1.2.5: a result shown in a popup (target=_blank) is its own document, and the submitted form is not in it, so the
+    // form counts as replaced: an anchor. The original page keeps its form and is not evidence either way.
+    if (resultPage !== page) formGone = true;
     let finalUrl =
       chainFinal.length && resultPage === page
         ? chainFinal[chainFinal.length - 1]
@@ -1405,6 +1518,8 @@ async function doOneForm(
       textBefore,
       textAfter,
       formGone,
+      liveText,
+      nearText,
     });
     Object.assign(record, verdict, {
       networkErrors: relevant

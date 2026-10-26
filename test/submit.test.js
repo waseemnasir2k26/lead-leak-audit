@@ -131,8 +131,17 @@ test("plan: CAPTCHA forms are marked blocked and never planned", () => {
 test("plan: one slot per form, search/login never submitted, hard cap of 10", () => {
   const forms = Array.from({ length: 14 }, (_, i) => mkForm({ sig: "s" + i }));
   forms.push(
-    mkForm({ sig: "login", fields: [...mkForm().fields, field({ i: 9, type: "password", name: "pw" })] }),
-    mkForm({ sig: "search", fields: [field({ i: 0, type: "search", name: "q" })] }),
+    mkForm({
+      sig: "login",
+      fields: [
+        ...mkForm().fields,
+        field({ i: 9, type: "password", name: "pw" }),
+      ],
+    }),
+    mkForm({
+      sig: "search",
+      fields: [field({ i: 0, type: "search", name: "q" })],
+    }),
   );
   const out = planSubmissions(inv(forms), {
     email: "qa@acme.test",
@@ -272,6 +281,7 @@ test("outcome: inline success message is accepted; error text is an error", () =
       ...base,
       textAfter: "Contact us\nMessage sent, thanks!",
       relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
+      formGone: true,
     }).status,
     "accepted",
   );
@@ -334,12 +344,22 @@ test("outcome: success text that was already on the page does not count", () => 
 
 // Outcome levels: "accepted" = positive evidence AND no negative cue. "delivered" is never produced here (IMAP only).
 const POST200 = [{ method: "POST", url: "https://acme.test/s", status: 200 }];
+// formGone: true by default (the form is gone after submit = anchor). Anchor-less cases pass formGone: false.
 const outcomeOf = (textAfter, extra = {}) =>
-  classifyOutcome({ ...base, textAfter, relevant: POST200, ...extra });
+  classifyOutcome({
+    ...base,
+    textAfter,
+    relevant: POST200,
+    formGone: true,
+    ...extra,
+  });
 test("outcome: a success message with no negative cue is accepted, never delivered", () => {
   const o = outcomeOf("Thank you! Your message has been sent.");
   assert.equal(o.status, "accepted");
-  assert.match(o.detail, /Accepted by the site, not verified: run with --imap to confirm delivery/);
+  assert.match(
+    o.detail,
+    /Accepted by the site, not verified: run with --imap to confirm delivery/,
+  );
 });
 test("outcome: a negative cue beside success wording is unconfirmed; alone it is error-message", () => {
   assert.equal(
@@ -354,18 +374,33 @@ test("outcome: a negative cue beside success wording is unconfirmed; alone it is
     outcomeOf("Gracias. Error al enviar el mensaje").status,
     "unconfirmed",
   );
-  assert.equal(outcomeOf("Your message was not delivered.").status, "error-message");
+  assert.equal(
+    outcomeOf("Your message was not delivered.").status,
+    "error-message",
+  );
   assert.equal(outcomeOf("Il y a eu un échec, merci").status, "unconfirmed");
-  assert.equal(outcomeOf("Leider ist ein Fehler aufgetreten").status, "error-message");
+  assert.equal(
+    outcomeOf("Leider ist ein Fehler aufgetreten").status,
+    "error-message",
+  );
   assert.equal(outcomeOf("Erro ao enviar, obrigado").status, "unconfirmed");
 });
 test("outcome: negative words only count as whole words (knot, Note, nothing do not trip)", () => {
-  assert.equal(outcomeOf("Thanks! Your note is in the knot of nothing").status, "accepted");
+  assert.equal(
+    outcomeOf(
+      "Thanks! Your message has been sent. Your note is in the knot of nothing",
+    ).status,
+    "accepted",
+  );
 });
 test("outcome: 'invalid' alone is not a negative cue; 'invalid email' is", () => {
-  assert.equal(outcomeOf("Thanks! Your message has been sent. Invalid").status, "accepted");
   assert.equal(
-    outcomeOf("Thanks! Your message has been sent. Invalid email address.").status,
+    outcomeOf("Thanks! Your message has been sent. Invalid").status,
+    "accepted",
+  );
+  assert.equal(
+    outcomeOf("Thanks! Your message has been sent. Invalid email address.")
+      .status,
     "unconfirmed",
   );
   assert.equal(
@@ -405,14 +440,28 @@ test("outcome: JSON error key with content is error-message; an empty error key 
       ...base,
       textAfter: body,
       relevant: [
-        { method: "POST", url: "https://acme.test/api/lead", status: 200, contentType: "application/json", body },
+        {
+          method: "POST",
+          url: "https://acme.test/api/lead",
+          status: 200,
+          contentType: "application/json",
+          body,
+        },
       ],
     }).status;
-  assert.equal(json('{"errors":{"email":["Bad"]},"message":"Thanks"}'), "error-message");
+  assert.equal(
+    json('{"errors":{"email":["Bad"]},"message":"Thanks"}'),
+    "error-message",
+  );
   assert.equal(json('{"error":"Could not save"}'), "error-message");
   assert.equal(json('{"status":"error","message":"Thanks"}'), "error-message");
   assert.equal(json('{"success":false}'), "error-message");
-  assert.equal(json('{"error":"","errors":[],"success":true,"message":"Thanks, we received it"}'), "accepted");
+  assert.equal(
+    json(
+      '{"error":"","errors":[],"success":true,"message":"Thanks, we received your message"}',
+    ),
+    "accepted",
+  );
 });
 test("outcome: JSON ok:true with no error is positive evidence, unless the JSON text has a negative cue", () => {
   const json = (body) =>
@@ -420,18 +469,34 @@ test("outcome: JSON ok:true with no error is positive evidence, unless the JSON 
       ...base,
       textAfter: body,
       relevant: [
-        { method: "POST", url: "https://acme.test/api/lead", status: 200, contentType: "application/json", body },
+        {
+          method: "POST",
+          url: "https://acme.test/api/lead",
+          status: 200,
+          contentType: "application/json",
+          body,
+        },
       ],
     }).status;
   assert.equal(json('{"ok":true}'), "accepted");
-  assert.equal(json('{"ok":true,"message":"Saved, but the email was not sent"}'), "unconfirmed");
+  assert.equal(
+    json('{"ok":true,"message":"Saved, but the email was not sent"}'),
+    "unconfirmed",
+  );
 });
 test("outcome: a non-JSON body is read as text even when the header says JSON", () => {
   const o = classifyOutcome({
     ...base,
     textAfter: "Thank you! Your message has been sent.",
+    formGone: true,
     relevant: [
-      { method: "POST", url: "https://acme.test/s", status: 200, contentType: "application/json", body: "<html>" },
+      {
+        method: "POST",
+        url: "https://acme.test/s",
+        status: 200,
+        contentType: "application/json",
+        body: "<html>",
+      },
     ],
   });
   assert.equal(o.status, "accepted");
@@ -442,7 +507,9 @@ test("outcome: 302 to a foreign host after the POST is unconfirmed, with a manua
   const o = classifyOutcome({
     ...base,
     relevant: [{ method: "POST", url: "https://acme.test/s", status: 302 }],
-    blockedRedirects: [{ host: "pay.other.test", kind: "foreign", path: "/thanks", status: 302 }],
+    blockedRedirects: [
+      { host: "pay.other.test", kind: "foreign", path: "/thanks", status: 302 },
+    ],
   });
   assert.equal(o.status, "unconfirmed");
   assert.match(
