@@ -147,6 +147,18 @@ test('outcome: a 302 to a foreign host after the POST is "unconfirmed" with a ma
   assert.deepEqual(sites.foreignHits, []);
 });
 
+test("outcome: a 3xx to a forbidden endpoint on the same host is unconfirmed, not accepted-redirect-blocked, and /cart is never requested", async () => {
+  sites.gets.length = 0;
+  const { sub } = await run(23, "/post/redir-go");
+  assert.equal(sub.status, "unconfirmed", JSON.stringify(sub));
+  assert.match(
+    sub.detail,
+    /^unconfirmed: the site redirected to \/cart, which the safety rail blocked \(HTTP 303\)\. The server answered, but whether the lead was accepted is not shown\. Check manually\.$/,
+  );
+  assert.deepEqual(sub.networkErrors, []);
+  assert.ok(!sites.gets.includes("/cart"));
+});
+
 test("outcome: a JS redirect to /cart after a fetch 200 is reported truthfully and /cart is never requested", async () => {
   sites.gets.length = 0;
   const { sub } = await run(12, "#jf");

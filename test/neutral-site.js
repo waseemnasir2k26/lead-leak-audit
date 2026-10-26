@@ -29,6 +29,8 @@ export const PAGES = {
   11: contactForm("/post/redir302"),
   12: `<h2>Contact us</h2><form id="jf" action="/post/ok" method="post"><input name="name" placeholder="Name"><input type="email" name="email" placeholder="Email"><textarea name="message" placeholder="How can we help?"></textarea><button type="submit">Send message</button></form><script>document.getElementById('jf').addEventListener('submit',function(e){e.preventDefault();fetch('/post/ok',{method:'POST',body:new URLSearchParams(new FormData(this))}).then(function(){location.href='/cart'})})</script>`,
   13: contactForm("/post/meta"),
+  // a POST answered with a 3xx to a forbidden endpoint on the same host
+  23: contactForm("/post/redir-go"),
   19: contactForm("/post/err-both"),
   20: contactForm("/post/err-only"),
   21: contactForm("/post/ok-sent"),
@@ -81,6 +83,10 @@ export async function startNeutralSites() {
           return html("<p>Thank you, we received your message</p>");
         if (u.pathname === "/post/redir302") {
           r.writeHead(302, { location: `${FOREIGN}/after` });
+          return r.end();
+        }
+        if (u.pathname === "/post/redir-go") {
+          r.writeHead(303, { location: "/cart" });
           return r.end();
         }
         if (u.pathname === "/post/meta")

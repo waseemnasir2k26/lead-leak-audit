@@ -670,7 +670,7 @@ export function submissionFindings(sub, { deadActions = new Set() } = {}) {
           title: `${label}: no confirmation shown to the visitor`,
           detail: sub.detail,
           fix: sub.redirectBlocked
-            ? "Open the host the site redirected to, submit the form by hand and check its thank-you page. The tool did not visit it."
+            ? "Open the place the site redirected to, submit the form by hand and check its thank-you page. The tool did not visit it."
             : "Show a clear thank-you message or redirect to a thank-you page. Without it visitors resubmit or give up.",
           where,
           evidence: sub.evidence,

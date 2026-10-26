@@ -380,22 +380,20 @@ export function classifyOutcome({
   if (received) {
     if (blockedRedirects.length) {
       const r = blockedRedirects[0];
-      // A 3xx only proves the server answered. Sent to a foreign host, the thank-you page was never seen: unconfirmed.
-      if (r.kind === "foreign")
-        return {
-          status: "unconfirmed",
-          detail: `unconfirmed: the site redirected to ${r.host}, which the safety rail blocked (HTTP ${r.status ?? received.status}). The server answered, but whether the lead was accepted is not shown. Check that host's thank-you page manually.`,
-          evidence,
-          http: r.status ?? received.status,
-          blocked: where(r.host, r.path),
-          redirectBlocked: true,
-        };
+      // A 3xx only proves the server answered. Whether it went to a foreign host or a forbidden endpoint on the same host,
+      // the thank-you page was never seen: unconfirmed, with the same manual-check note.
+      const status = r.status ?? received.status;
+      const detail =
+        r.kind === "foreign"
+          ? `unconfirmed: the site redirected to ${r.host}, which the safety rail blocked (HTTP ${status}). The server answered, but whether the lead was accepted is not shown. Check that host's thank-you page manually.`
+          : `unconfirmed: the site redirected to ${r.path}, which the safety rail blocked (HTTP ${status}). The server answered, but whether the lead was accepted is not shown. Check manually.`;
       return {
-        status: "accepted-redirect-blocked",
-        detail: `received by your server (HTTP ${r.status ?? received.status}); the follow-up redirect to ${where(r.host, r.path)} was blocked by the safety rail. The confirmation page was not visited, so the visitor experience is unverified.`,
+        status: "unconfirmed",
+        detail,
         evidence,
-        http: r.status ?? received.status,
+        http: status,
         blocked: where(r.host, r.path),
+        redirectBlocked: true,
       };
     }
     const nav = blockedNavs[0] || forbidden.find((e) => e.nav);
