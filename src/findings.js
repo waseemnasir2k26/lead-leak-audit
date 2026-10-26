@@ -57,7 +57,17 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
   }
 
   for (const e of inventory.embeds || []) {
-    out.push(mk({ id: "embedded-third-party-form", severity: "info", category: "forms", title: `Embedded third-party form (${e.host})`, detail: `A form from ${e.host} is embedded in an iframe. Its fields live in another origin, so this tool cannot read or test it.`, fix: "Submit it by hand once a month and confirm the lead and the auto-reply arrive.", where: [e.page] }));
+    out.push(
+      mk({
+        id: "embedded-third-party-form",
+        severity: "info",
+        category: "forms",
+        title: `Embedded third-party form (${e.host})`,
+        detail: `A form from ${e.host} is embedded in an iframe. Its fields live in another origin, so this tool cannot read or test it.`,
+        fix: "Submit it by hand once a month and confirm the lead and the auto-reply arrive.",
+        where: [e.page],
+      }),
+    );
   }
 
   // Forms -------------------------------------------------------------
@@ -79,7 +89,8 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
     const ev = `action=${f.actionAttr === null ? "(none)" : short(f.actionAttr)} method=${f.method}`;
     const a = actions[f.actionAbs];
     if (a) {
-      const probeDead = a.status === 404 || a.status === 410 || (a.status === 0 && a.error);
+      const probeDead =
+        a.status === 404 || a.status === 410 || (a.status === 0 && a.error);
       if (probeDead && posted.has(f.actionAbs)) {
         // The HEAD probe is not the lead path: a real POST to this action was sent in this run, so its result decides.
         out.push(
@@ -87,7 +98,8 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
             id: "form-action-probe-info",
             severity: "info",
             category: "forms",
-            title: "GET not allowed on the form endpoint, normal for POST-only handlers",
+            title:
+              "GET not allowed on the form endpoint, normal for POST-only handlers",
             detail: `The ${name} posts to ${short(f.actionAbs)}. A HEAD probe returned ${a.status ? "HTTP " + a.status : "an error (" + a.error + ")"}, but a real test POST to that address was sent in this run; the submission result below is the one that counts.`,
             fix: "No action for the probe itself. Check the submission result for this form.",
             where,
@@ -453,7 +465,9 @@ export function deriveFindings(inventory, checks = {}, opts = {}) {
           severity: "info",
           category: "booking",
           title: `${b.vendor} link could not be verified`,
-          detail: r.skipped ? `${short(b.href)} was not requested: ${r.error}.` : `${short(b.href)} answered HTTP ${r.status} to an automated request. Vendors often block bots.`,
+          detail: r.skipped
+            ? `${short(b.href)} was not requested: ${r.error}.`
+            : `${short(b.href)} answered HTTP ${r.status} to an automated request. Vendors often block bots.`,
           fix: "Open the link by hand to confirm it works.",
           where: b.pages,
         }),
@@ -603,7 +617,22 @@ export function submissionFindings(sub, { deadActions = new Set() } = {}) {
         }),
       );
       break;
-    case "delivered-redirect-blocked":
+    case "accepted":
+      // Counts as OK (info, no penalty) but carries the unverified note: the inbox was never checked.
+      out.push(
+        mk({
+          id: "submit-accepted-unverified",
+          severity: "info",
+          category: "forms",
+          title: `${label}: accepted by the site, delivery not verified`,
+          detail: sub.detail,
+          fix: "Run with --imap to confirm the lead reaches the test inbox. Until then this is an unverified pass.",
+          where,
+          evidence: sub.evidence,
+        }),
+      );
+      break;
+    case "accepted-redirect-blocked":
       out.push(
         mk({
           id: "submit-redirect-blocked",
@@ -660,7 +689,7 @@ export function submissionFindings(sub, { deadActions = new Set() } = {}) {
       );
       break;
     default:
-      break; // delivered: good news, no finding
+      break; // delivered (IMAP-confirmed): good news, no finding
   }
   if (sub.networkErrors?.length) {
     out.push(

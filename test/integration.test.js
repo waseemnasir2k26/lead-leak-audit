@@ -101,7 +101,7 @@ test("submit: one marked lead per form, CAPTCHA form untouched, honeypot empty, 
   const by = (needle) => extra.submissions.find((s) => s.page.includes(needle));
 
   const good = by("/contact.html");
-  assert.equal(good.status, "delivered");
+  assert.equal(good.status, "accepted");
   assert.match(good.redirect, /thanks\.html$/);
   assert.equal(by("/quote.html").status, "failed");
   assert.equal(by("/quote.html").http, 404);
@@ -175,6 +175,11 @@ test("submit: reply timing with an injected inbox fills the speed buckets", asyn
     });
     assert.equal(extra.replies.length, 1);
     assert.equal(extra.replies[0].bucket, "great");
+    assert.equal(
+      extra.submissions.find((s) => s.leadId === extra.replies[0].leadId)?.status,
+      "delivered",
+      "an IMAP reply is the only thing that upgrades a lead to delivered",
+    );
     assert.ok(extra.replyTimingMeasured);
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lla-int-"));
     const { jsonPath, htmlPath } = writeReports(result, dir, extra);

@@ -7,7 +7,7 @@ import { deriveFindings } from "./findings.js";
 import { computeScore } from "./score.js";
 import { fetchRobots, checkLink, checkMx, USER_AGENT } from "./net.js";
 
-export const VERSION = "1.1.2";
+export const VERSION = "1.2.0";
 const SKIP_EXT =
   /\.(?:pdf|jpe?g|png|gif|webp|svg|ico|zip|rar|7z|mp4|mov|mp3|wav|css|js|json|xml|txt|docx?|xlsx?|pptx?|woff2?|ttf)(?:[?#]|$)/i;
 const PRIORITY =

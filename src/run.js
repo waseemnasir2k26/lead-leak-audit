@@ -93,16 +93,29 @@ export async function runSubmit(url, opts = {}) {
     if (planned.some((p) => p.status === "planned")) {
       const summary = summarizePlan(planned);
       if (confirm) {
-        if (!(await confirm(summary, formatPlan(summary, { email })))) throw new RailError("Cancelled at the confirmation prompt: nothing was sent.");
+        if (!(await confirm(summary, formatPlan(summary, { email }))))
+          throw new RailError(
+            "Cancelled at the confirmation prompt: nothing was sent.",
+          );
       } else if (yes) {
-        if (!only.length) throw new RailError("--yes needs --only <n|#id|.class|text>: unattended runs must name the forms they may submit.");
+        if (!only.length)
+          throw new RailError(
+            "--yes needs --only <n|#id|.class|text>: unattended runs must name the forms they may submit.",
+          );
         // Unattended: every --only token must pick exactly one form, so nothing is chosen by accident.
         for (const token of only) {
-          const hits = result.inventory.forms.filter((f, k) => matchesOnly(f, k + 1, [token])).length;
-          if (hits !== 1) throw new RailError(`--only "${token}" matches ${hits} forms; with --yes it must match exactly one. Use the form number from --dry-run.`);
+          const hits = result.inventory.forms.filter((f, k) =>
+            matchesOnly(f, k + 1, [token]),
+          ).length;
+          if (hits !== 1)
+            throw new RailError(
+              `--only "${token}" matches ${hits} forms; with --yes it must match exactly one. Use the form number from --dry-run.`,
+            );
         }
       } else {
-        throw new RailError(`Refusing to send without confirmation. Run interactively and answer y, or pass --yes together with --only to name the forms for an unattended run.${terminalHint()}`);
+        throw new RailError(
+          `Refusing to send without confirmation. Run interactively and answer y, or pass --yes together with --only to name the forms for an unattended run.${terminalHint()}`,
+        );
       }
     }
     const submissions = await runSubmissions(browser, planned, {
@@ -120,7 +133,12 @@ export async function runSubmit(url, opts = {}) {
       (s) =>
         s.leadId &&
         s.submittedAt &&
-        ["delivered", "delivered-redirect-blocked", "unconfirmed", "error-message"].includes(s.status),
+        [
+          "accepted",
+          "accepted-redirect-blocked",
+          "unconfirmed",
+          "error-message",
+        ].includes(s.status),
     );
     if (imap && waiting.length) {
       log(
@@ -141,10 +159,19 @@ export async function runSubmit(url, opts = {}) {
         await client.close?.();
       }
     }
-    // An IMAP reply is positive evidence: it upgrades "unconfirmed" to delivered.
+    // "delivered" is reserved for this: an IMAP reply carrying the test ID is the only proof of an inbox.
     for (const r of replies) {
       const sub = submissions.find((x) => x.leadId === r.leadId);
-      if (sub && r.seconds !== null && ["unconfirmed", "error-message"].includes(sub.status)) {
+      if (
+        sub &&
+        r.seconds !== null &&
+        [
+          "accepted",
+          "accepted-redirect-blocked",
+          "unconfirmed",
+          "error-message",
+        ].includes(sub.status)
+      ) {
         sub.status = "delivered";
         sub.confirmation = "imap-reply";
         sub.detail = `${sub.detail} A reply carrying the test ID arrived after ${Math.round(r.seconds)} s, so the lead did reach a mailbox.`;
@@ -152,7 +179,10 @@ export async function runSubmit(url, opts = {}) {
     }
     const deadActions = new Set(
       Object.entries(result.checks.actions)
-        .filter(([, r]) => [404, 410].includes(r.status) || (r.status === 0 && r.error))
+        .filter(
+          ([, r]) =>
+            [404, 410].includes(r.status) || (r.status === 0 && r.error),
+        )
         .map(([u]) => u),
     );
     const extraFindings = [
@@ -162,7 +192,9 @@ export async function runSubmit(url, opts = {}) {
     // A GET/HEAD probe of a form action says nothing about the lead path once a real POST went to that action.
     const postedActions = new Set(
       submissions
-        .filter((s) => s.action && (POSTED_STATUSES.has(s.status) || s.http != null))
+        .filter(
+          (s) => s.action && (POSTED_STATUSES.has(s.status) || s.http != null),
+        )
         .map((s) => s.action),
     );
     const final = rescore(result, extraFindings, { postedActions });
@@ -174,7 +206,10 @@ export async function runSubmit(url, opts = {}) {
         replies,
         email,
         replyTimingMeasured: imap,
-        deliveryVerified: imap && replies.length > 0 && replies.every((r) => r.seconds !== null),
+        deliveryVerified:
+          imap &&
+          replies.length > 0 &&
+          replies.every((r) => r.seconds !== null),
       },
     };
   } finally {
@@ -192,16 +227,30 @@ export function readBaseline(file) {
   try {
     text = fs.readFileSync(file, "utf8");
   } catch (e) {
-    if (e.code === "ENOENT" || e.code === "ENOTDIR") return { found: false, score: null, note: `No baseline yet at ${file}; the drop check is skipped this run.` };
-    return { found: false, score: null, note: `Baseline ${file} could not be read (${e.code || e.message}); the drop check is skipped.` };
+    if (e.code === "ENOENT" || e.code === "ENOTDIR")
+      return {
+        found: false,
+        score: null,
+        note: `No baseline yet at ${file}; the drop check is skipped this run.`,
+      };
+    return {
+      found: false,
+      score: null,
+      note: `Baseline ${file} could not be read (${e.code || e.message}); the drop check is skipped.`,
+    };
   }
   try {
     const j = JSON.parse(text);
-    if (typeof j?.score?.value === "number") return { found: true, score: j.score.value, note: null };
+    if (typeof j?.score?.value === "number")
+      return { found: true, score: j.score.value, note: null };
   } catch {
     /* fall through */
   }
-  return { found: false, score: null, note: `Baseline ${file} is not a lead-leak-audit report; the drop check is skipped.` };
+  return {
+    found: false,
+    score: null,
+    note: `Baseline ${file} is not a lead-leak-audit report; the drop check is skipped.`,
+  };
 }
 
 /** Back-compat helper: the score, or null when there is no usable baseline. */
@@ -224,6 +273,11 @@ export { writeReports };
 
 /** Git Bash (mintty) does not give Node a TTY, so the y/N prompt cannot work there. */
 export function terminalHint(env = process.env) {
-  const mintty = env.MSYSTEM || env.TERM_PROGRAM === "mintty" || /mintty/i.test(env.TERM_PROGRAM || "");
-  return mintty && !process.stdin.isTTY ? " It looks like you are in Git Bash (mintty), which hides the terminal from Node: run `winpty node src/cli.js ...`, use PowerShell/cmd, or pass --yes --only <form number>." : "";
+  const mintty =
+    env.MSYSTEM ||
+    env.TERM_PROGRAM === "mintty" ||
+    /mintty/i.test(env.TERM_PROGRAM || "");
+  return mintty && !process.stdin.isTTY
+    ? " It looks like you are in Git Bash (mintty), which hides the terminal from Node: run `winpty node src/cli.js ...`, use PowerShell/cmd, or pass --yes --only <form number>."
+    : "";
 }

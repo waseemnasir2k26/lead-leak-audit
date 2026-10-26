@@ -264,7 +264,8 @@ test("findings: submission results map to severities", () => {
     sub("blocked-captcha")[0].title,
     /blocked by CAPTCHA, test manually/,
   );
-  assert.equal(sub("delivered").length, 0);
+  assert.equal(sub("accepted")[0].severity, "info");
+  assert.match(sub("accepted")[0].title, /not verified/);
   assert.equal(
     submissionFindings(
       { status: "failed", action: "a", label: "x", page: "p" },

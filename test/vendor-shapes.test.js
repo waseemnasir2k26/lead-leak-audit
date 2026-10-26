@@ -86,9 +86,9 @@ test("real run: each real contact form receives exactly one lead, nothing else r
     [...GOOD_SINKS].sort(),
     `unexpected POSTs: ${site.hits}`,
   );
-  const delivered = extra.submissions.filter((s) => s.status === "delivered");
+  const accepted = extra.submissions.filter((s) => s.status === "accepted");
   assert.equal(
-    delivered.length,
+    accepted.length,
     GOOD_SINKS.length,
     JSON.stringify(
       extra.submissions

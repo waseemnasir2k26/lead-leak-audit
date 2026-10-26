@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 - 2026-10-26
+
+Renames the outcome levels so "delivered" means what it says. Upgrade if you read submission results.
+
+- **"delivered" is reserved for an IMAP-confirmed reply.** Without `--imap` the best outcome is now **"accepted"**, shown as "Accepted by the site, not verified: run with --imap to confirm delivery". It is an OK result with an "unverified" info note and no penalty. `delivered-redirect-blocked` is renamed `accepted-redirect-blocked`. Report CSS classes and tests follow.
+- **"accepted" needs positive evidence AND no negative cue.** One negative lexicon (`ERROR_RE`) covers English plus basic Spanish, French, German and Portuguese: not, n't, no longer, error, fail(ed/ure), unable, cannot, could not, problem, issue, try again, went wrong, rejected, "invalid" before a field word, no se pudo, error al, échec, impossible, nicht, fehler, falhou, erro. Any negative cue gives "error-message" without success wording and "unconfirmed" with it.
+- **JSON responses are parsed.** A JSON answer with `ok:false`, `success:false`, `status:"error"` or a filled `error`/`errors` key is "error-message", whatever the text. `ok:true` or `success:true` with no error is positive evidence, and negative cues are scanned in its string values (not its keys).
+- **Bare "spam" is no longer a negative cue.** "marked as spam" still is.
+- Tests cover the new levels, the negative lexicon and JSON handling, and the IMAP path still reports "delivered".
+
 ## 1.1.2 - 2026-10-26
 
 Fixes two report-truth bugs found in review. Upgrade if you used `submit`.

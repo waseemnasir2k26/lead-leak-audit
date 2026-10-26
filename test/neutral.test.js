@@ -78,14 +78,14 @@ test('neutral: the positive control (heading "Contact us", message box, email + 
   assert.equal(r.status, "would-submit");
   sites.posts.length = 0;
   const { sub } = await run(6, "/post/ok");
-  assert.equal(sub.status, "delivered", JSON.stringify(sub));
+  assert.equal(sub.status, "accepted", JSON.stringify(sub));
   assert.equal(sites.posts.filter((p) => p === "/post/ok").length, 1);
 });
 
 test('neutral: a visible "leave this field blank" field is never filled', async () => {
   sites.bodies.length = 0;
   const { sub } = await run(7, "/post/ok");
-  assert.equal(sub.status, "delivered");
+  assert.equal(sub.status, "accepted");
   const body = sites.bodies.at(-1).body;
   assert.equal(body.extra ?? "", "", "the visible honeypot must stay empty");
   assert.equal(body.name, "LEAD-LEAK-AUDIT TEST");
@@ -114,7 +114,7 @@ test("neutral: unknown number inputs are never filled (valueFor)", async () => {
   assert.equal(valueFor(f({ name: "staff_count" }), ctx).action, "fill");
 });
 
-test('outcome: a blank 200 is "unconfirmed", never "delivered"', async () => {
+test('outcome: a blank 200 is "unconfirmed", never "accepted"', async () => {
   const { sub } = await run(8, "/post/blank");
   assert.equal(sub.status, "unconfirmed", JSON.stringify(sub));
   assert.match(sub.detail, /no positive evidence of delivery/);
@@ -134,10 +134,10 @@ test('outcome: a page without the form and without any thank-you is "unconfirmed
   assert.match(sub.detail, /no thank-you message and no thank-you page/);
 });
 
-test('outcome: a 302 to a foreign host after the POST is "delivered-redirect-blocked", with no false network error', async () => {
+test('outcome: a 302 to a foreign host after the POST is "accepted-redirect-blocked", with no false network error', async () => {
   sites.foreignHits.length = 0;
   const { sub, result } = await run(11, "/post/redir302");
-  assert.equal(sub.status, "delivered-redirect-blocked", JSON.stringify(sub));
+  assert.equal(sub.status, "accepted-redirect-blocked", JSON.stringify(sub));
   assert.match(
     sub.detail,
     /^received by your server \(HTTP 302\); the follow-up redirect to 127\.0\.0\.1:\d+\/after was blocked by the safety rail/,
@@ -150,7 +150,7 @@ test('outcome: a 302 to a foreign host after the POST is "delivered-redirect-blo
 test("outcome: a JS redirect to /cart after a fetch 200 is reported truthfully and /cart is never requested", async () => {
   sites.gets.length = 0;
   const { sub } = await run(12, "#jf");
-  assert.equal(sub.status, "delivered-redirect-blocked", JSON.stringify(sub));
+  assert.equal(sub.status, "accepted-redirect-blocked", JSON.stringify(sub));
   assert.match(
     sub.detail,
     /^received by your server \(HTTP 200\); the follow-up navigation to \/cart was blocked by the safety rail/,
@@ -161,7 +161,7 @@ test("outcome: a JS redirect to /cart after a fetch 200 is reported truthfully a
 test('outcome: a meta refresh to another host is the same truthful wording, never "saw a confirmation on /"', async () => {
   sites.foreignHits.length = 0;
   const { sub } = await run(13, "/post/meta");
-  assert.equal(sub.status, "delivered-redirect-blocked", JSON.stringify(sub));
+  assert.equal(sub.status, "accepted-redirect-blocked", JSON.stringify(sub));
   assert.match(
     sub.detail,
     /^received by your server \(HTTP 200\); the follow-up navigation to 127\.0\.0\.1:\d+\/meta was blocked by the safety rail/,
@@ -170,7 +170,7 @@ test('outcome: a meta refresh to another host is the same truthful wording, neve
   assert.deepEqual(sites.foreignHits, []);
 });
 
-test("outcome: delivered-redirect-blocked leads are included in the IMAP wait, and a reply is positive evidence", async () => {
+test("outcome: accepted-redirect-blocked leads are included in the IMAP wait, and a reply is positive evidence", async () => {
   process.env.LLA_IMAP_HOST = "imap.example.test";
   process.env.LLA_IMAP_USER = "u";
   process.env.LLA_IMAP_PASS = "neutral-pass-123";
@@ -199,6 +199,10 @@ test("outcome: delivered-redirect-blocked leads are included in the IMAP wait, a
     assert.equal(extra.replies.length, 1);
     assert.equal(extra.replies[0].bucket, "great");
     assert.equal(extra.deliveryVerified, true);
+    assert.equal(
+      extra.submissions.find((s) => s.leadId === extra.replies[0].leadId)?.status,
+      "delivered",
+    );
   } finally {
     for (const k of ["LLA_IMAP_HOST", "LLA_IMAP_USER", "LLA_IMAP_PASS"])
       delete process.env[k];
@@ -226,7 +230,7 @@ test("time trap: a submit within 2.5 s of load is swallowed; the dwell and human
   assert.equal(fast.sub.status, "no-request", JSON.stringify(fast.sub));
   assert.equal(sites.posts.length, 0);
   const slow = await run(18, "/post/ok", { dwellMs: 3000 });
-  assert.equal(slow.sub.status, "delivered", JSON.stringify(slow.sub));
+  assert.equal(slow.sub.status, "accepted", JSON.stringify(slow.sub));
   // the human-pace typing really typed every field (no silent per-field errors)
   assert.match(sites.bodies.at(-1).body.message || '', /LLA-[0-9a-f]{8}/);
   assert.equal(sites.bodies.at(-1).body.name, 'LEAD-LEAK-AUDIT TEST');
@@ -237,7 +241,7 @@ test("time trap: a submit within 2.5 s of load is swallowed; the dwell and human
 test("frames: a form inside a same-origin iframe is scanned and submitted", async () => {
   sites.posts.length = 0;
   const { sub } = await run(15, "/post/frame");
-  assert.equal(sub.status, "delivered", JSON.stringify(sub));
+  assert.equal(sub.status, "accepted", JSON.stringify(sub));
   assert.deepEqual(sites.posts, ["/post/frame"]);
 });
 
@@ -276,15 +280,15 @@ test('--only: "", "/", "." and other broad values are refused before anything ha
   assert.equal(sites.posts.length, before);
 });
 
-test('outcome: "Thanks for your message, but it could not be sent. Please try again." is unconfirmed, never delivered', async () => {
+test('outcome: "Thanks for your message, but it could not be sent. Please try again." is unconfirmed, never accepted', async () => {
   const { sub } = await run(19, "/post/err-both");
   assert.equal(sub.status, "unconfirmed", JSON.stringify(sub));
-  assert.notEqual(sub.status, "delivered");
+  assert.notEqual(sub.status, "accepted");
 });
 
-test('outcome: "Thank you! Your message has been sent." is delivered', async () => {
+test('outcome: "Thank you! Your message has been sent." is accepted', async () => {
   const { sub } = await run(21, "/post/ok-sent");
-  assert.equal(sub.status, "delivered", JSON.stringify(sub));
+  assert.equal(sub.status, "accepted", JSON.stringify(sub));
   assert.equal(sub.confirmation, "message");
 });
 
@@ -296,7 +300,7 @@ test('outcome: "Error: please try again" is error-message', async () => {
 test("probe: a 404 on the GET/HEAD probe of a POST-only action is info when a real POST was sent, and the POST result counts", async () => {
   sites.posts.length = 0;
   const { sub, result } = await run(22, "/post/postonly");
-  assert.equal(sub.status, "delivered", JSON.stringify(sub));
+  assert.equal(sub.status, "accepted", JSON.stringify(sub));
   assert.ok(sites.posts.includes("/post/postonly"));
   assert.ok(!result.findings.some((f) => f.id === "form-action-dead"));
   assert.ok(!result.findings.some((f) => /every submission is lost/i.test(f.detail)));

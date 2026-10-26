@@ -246,7 +246,7 @@ test("outcome: HTTP error means the lead was lost", () => {
   assert.equal(o.status, "failed");
   assert.equal(o.http, 404);
 });
-test("outcome: redirect to a thank-you page is delivered", () => {
+test("outcome: redirect to a thank-you page is accepted", () => {
   const o = classifyOutcome({
     ...base,
     finalUrl: "https://acme.test/thanks.html",
@@ -256,7 +256,7 @@ test("outcome: redirect to a thank-you page is delivered", () => {
       { method: "GET", url: "https://acme.test/thanks.html", status: 200 },
     ],
   });
-  assert.equal(o.status, "delivered");
+  assert.equal(o.status, "accepted");
   assert.equal(o.redirect, "https://acme.test/thanks.html");
 });
 test("outcome: 200 with nothing shown is unconfirmed", () => {
@@ -266,14 +266,14 @@ test("outcome: 200 with nothing shown is unconfirmed", () => {
   });
   assert.equal(o.status, "unconfirmed");
 });
-test("outcome: inline success message is delivered; error text is an error", () => {
+test("outcome: inline success message is accepted; error text is an error", () => {
   assert.equal(
     classifyOutcome({
       ...base,
       textAfter: "Contact us\nMessage sent, thanks!",
       relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
     }).status,
-    "delivered",
+    "accepted",
   );
   assert.equal(
     classifyOutcome({
@@ -330,4 +330,109 @@ test("outcome: success text that was already on the page does not count", () => 
     relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
   });
   assert.equal(o.status, "unconfirmed");
+});
+
+// Outcome levels: "accepted" = positive evidence AND no negative cue. "delivered" is never produced here (IMAP only).
+const POST200 = [{ method: "POST", url: "https://acme.test/s", status: 200 }];
+const outcomeOf = (textAfter, extra = {}) =>
+  classifyOutcome({ ...base, textAfter, relevant: POST200, ...extra });
+test("outcome: a success message with no negative cue is accepted, never delivered", () => {
+  const o = outcomeOf("Thank you! Your message has been sent.");
+  assert.equal(o.status, "accepted");
+  assert.match(o.detail, /Accepted by the site, not verified: run with --imap to confirm delivery/);
+});
+test("outcome: a negative cue beside success wording is unconfirmed; alone it is error-message", () => {
+  assert.equal(
+    outcomeOf("Thanks for your message. There was an error sending it.").status,
+    "unconfirmed",
+  );
+  assert.equal(
+    outcomeOf("Thank you. Your message was not delivered.").status,
+    "unconfirmed",
+  );
+  assert.equal(
+    outcomeOf("Gracias. Error al enviar el mensaje").status,
+    "unconfirmed",
+  );
+  assert.equal(outcomeOf("Your message was not delivered.").status, "error-message");
+  assert.equal(outcomeOf("Il y a eu un échec, merci").status, "unconfirmed");
+  assert.equal(outcomeOf("Leider ist ein Fehler aufgetreten").status, "error-message");
+  assert.equal(outcomeOf("Erro ao enviar, obrigado").status, "unconfirmed");
+});
+test("outcome: negative words only count as whole words (knot, Note, nothing do not trip)", () => {
+  assert.equal(outcomeOf("Thanks! Your note is in the knot of nothing").status, "accepted");
+});
+test("outcome: 'invalid' alone is not a negative cue; 'invalid email' is", () => {
+  assert.equal(outcomeOf("Thanks! Your message has been sent. Invalid").status, "accepted");
+  assert.equal(
+    outcomeOf("Thanks! Your message has been sent. Invalid email address.").status,
+    "unconfirmed",
+  );
+  assert.equal(
+    outcomeOf("Invalid email address. Please try again.").status,
+    "error-message",
+  );
+});
+test("outcome: 'spam' alone is not a negative cue; 'marked as spam' is", () => {
+  assert.equal(
+    outcomeOf("Thanks! Message sent. Check your spam folder.").status,
+    "accepted",
+  );
+  assert.equal(
+    outcomeOf("Thanks! Message sent. It was marked as spam.").status,
+    "unconfirmed",
+  );
+});
+test("outcome: JSON ok:false is error-message whatever the text says", () => {
+  const o = classifyOutcome({
+    ...base,
+    textAfter: '{"ok":false,"message":"Thank you for your message"}',
+    relevant: [
+      {
+        method: "POST",
+        url: "https://acme.test/api/lead",
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: '{"ok":false,"message":"Thank you for your message"}',
+      },
+    ],
+  });
+  assert.equal(o.status, "error-message");
+});
+test("outcome: JSON error key with content is error-message; an empty error key is not", () => {
+  const json = (body) =>
+    classifyOutcome({
+      ...base,
+      textAfter: body,
+      relevant: [
+        { method: "POST", url: "https://acme.test/api/lead", status: 200, contentType: "application/json", body },
+      ],
+    }).status;
+  assert.equal(json('{"errors":{"email":["Bad"]},"message":"Thanks"}'), "error-message");
+  assert.equal(json('{"error":"Could not save"}'), "error-message");
+  assert.equal(json('{"status":"error","message":"Thanks"}'), "error-message");
+  assert.equal(json('{"success":false}'), "error-message");
+  assert.equal(json('{"error":"","errors":[],"success":true,"message":"Thanks, we received it"}'), "accepted");
+});
+test("outcome: JSON ok:true with no error is positive evidence, unless the JSON text has a negative cue", () => {
+  const json = (body) =>
+    classifyOutcome({
+      ...base,
+      textAfter: body,
+      relevant: [
+        { method: "POST", url: "https://acme.test/api/lead", status: 200, contentType: "application/json", body },
+      ],
+    }).status;
+  assert.equal(json('{"ok":true}'), "accepted");
+  assert.equal(json('{"ok":true,"message":"Saved, but the email was not sent"}'), "unconfirmed");
+});
+test("outcome: a non-JSON body is read as text even when the header says JSON", () => {
+  const o = classifyOutcome({
+    ...base,
+    textAfter: "Thank you! Your message has been sent.",
+    relevant: [
+      { method: "POST", url: "https://acme.test/s", status: 200, contentType: "application/json", body: "<html>" },
+    ],
+  });
+  assert.equal(o.status, "accepted");
 });

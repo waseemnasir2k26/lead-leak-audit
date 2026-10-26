@@ -69,7 +69,7 @@ test("real run: zero requests reach the comment, cart, unsubscribe, delete, uplo
     ),
   );
   assert.ok(
-    extra.submissions.some((s) => s.status === "delivered"),
+    extra.submissions.some((s) => s.status === "accepted"),
     "the real contact form was still tested",
   );
 });
@@ -87,7 +87,7 @@ test("--only limits the run to the chosen form", async () => {
     only: ["#nonexistent"],
   });
   assert.equal(site.leads.length, before);
-  assert.ok(extra.submissions.every((s) => s.status !== "delivered"));
+  assert.ok(extra.submissions.every((s) => s.status !== "accepted"));
 });
 
 test("foreign host guard: JS-changed action, cross-origin GET form and JS-changed GET form never reach the other server", async () => {
