@@ -332,7 +332,14 @@ function jsonVerdict(body) {
     if (typeof x === "string") parts.push(x);
     else if (x && typeof x === "object") Object.values(x).forEach(walk);
   };
-  walk(v);
+  // v1.2.6: a top-level status "ok"/"success" is the verdict itself, not message text: it is not a negative or a phrase.
+  const okStatus =
+    !Array.isArray(v) &&
+    typeof v.status === "string" &&
+    /^(ok|success)$/i.test(v.status);
+  if (okStatus)
+    Object.entries(v).forEach(([k, x]) => k !== "status" && walk(x));
+  else walk(v);
   const values = parts.join("\n");
   if (Array.isArray(v)) return { kind: null, values };
   const filled = (x) =>
@@ -349,7 +356,12 @@ function jsonVerdict(body) {
     filled(v.errors)
   )
     return { kind: "error", values };
-  if (v.ok === true || v.success === true) return { kind: "ok", values };
+  if (
+    v.ok === true ||
+    v.success === true ||
+    /^(ok|success)$/i.test(String(v.status ?? ""))
+  )
+    return { kind: "ok", values };
   return { kind: null, values };
 }
 
@@ -400,28 +412,38 @@ function thanksAddress(u) {
   }
   return false;
 }
-// The confirmation must be tied to THIS submission. Returns the anchor kind, or null when none can be determined
-// (the caller then reports unconfirmed). (i) the submitted form is gone, hidden or replaced; (ii) the phrase sits in a
-// status / alert / aria-live region or beside the form; (iii) the page navigated to a thank-you address; (iv) JSON ok:true.
-function anchorOf({
-  textBefore,
-  liveText,
-  nearText,
-  formGone,
-  urlChanged,
-  finalUrl,
-  jsonOk,
-}) {
-  if (formGone) return "form-gone";
-  if (
-    CONFIRM_RE.test(
-      newLines(textBefore, `${liveText || ""}\n${nearText || ""}`),
-    )
-  )
-    return "status-area";
-  if (urlChanged && thanksAddress(finalUrl)) return "thank-you-address";
-  if (jsonOk) return "json";
-  return null;
+// Block-level tags become line breaks; inline tags vanish, so "has been <b>sent</b>" stays one line.
+const BLOCK_TAG_RE =
+  /<\/?(p|div|br|li|h[1-6]|tr|td|th|section|article|header|footer|main|nav|form|label|button|ul|ol|table|title|blockquote|dd|dt|option|select|textarea|input)\b[^>]*>/gi;
+// Text of an HTML response body, for the same phrase checks as the visible page. Scripts and styles are dropped.
+export function htmlToText(html) {
+  return String(html ?? "")
+    .replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1\s*>/gi, "\n")
+    .replace(/<!--[\s\S]*?-->/g, "\n")
+    .replace(BLOCK_TAG_RE, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&(rsquo|lsquo|#8217|#8216|#39|#x27|apos);/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, "&")
+    .split(/\n+/)
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+// v1.2.6: the ONLY evidence that separates "accepted" from "unconfirmed" is the server's own answer to the lead request,
+// read at the network layer. The DOM is never evidence: the page's own script can write any text it likes. The phrase must
+// be a submission confirmation, must NOT be in the pre-submit page, and must not be an error. (i) no redirect: the POST
+// answer carries it; (ii) a redirect: the final response carries it AND the final address is a thank-you address.
+function serverConfirms(reply, htmlBefore, textBefore) {
+  if (!reply || typeof reply.body !== "string") return false;
+  const before = `${htmlToText(htmlBefore)}\n${textBefore || ""}`;
+  const text = newLines(before, htmlToText(reply.body));
+  if (!text.trim()) return false;
+  if (ERROR_RE.test(text) || hasNonLatinLetter(text)) return false;
+  if (!CONFIRM_RE.test(text)) return false;
+  return !reply.redirected || thanksAddress(reply.finalUrl);
 }
 
 // True when any letter in the text is outside the Latin script (Japanese, Hangul, Han, Arabic script, Cyrillic, Greek, ...).
@@ -449,9 +471,10 @@ export function classifyOutcome({
   finalUrl,
   textBefore = "",
   textAfter = "",
-  formGone = false,
-  liveText = "", // text of role=status / role=alert / aria-live regions after submit
-  nearText = "", // text of the form's own container after submit (never <body>)
+  htmlBefore = "", // the pre-submit page HTML: a phrase already in it can never be the server's new answer
+  formGone = false, // display only (v1.2.6): never evidence
+  liveText = "", // display only: text of role=status / role=alert / aria-live regions after submit
+  nearText = "", // display only: text of the form's own container after submit (never <body>)
 }) {
   const urlChanged =
     !!finalUrl &&
@@ -641,18 +664,13 @@ export function classifyOutcome({
   const coveredHit = !landedHome && CONFIRM_RE.test(coveredSource);
   const nonLatin = hasNonLatinLetter(`${textAfter}\n${jsonText}`);
   const structuredOk = jsonOk && !jsonText.trim();
-  const anchor = anchorOf({
-    textBefore,
-    liveText,
-    nearText,
-    formGone,
-    urlChanged,
-    finalUrl,
-    jsonOk,
-  });
-  if (!nonLatin && (structuredOk || (coveredHit && anchor))) {
-    const seen = coveredHit
-      ? `the visitor saw a confirmation (anchor: ${anchor})${redirectUrl ? " on " + safePath(redirectUrl) : ""}`
+  // v1.2.6: JSON ok:true counts when the JSON carries no text, or when its text is itself a confirmation (coveredHit).
+  const jsonConfirmed = jsonOk && (structuredOk || coveredHit);
+  const reply = relevant.find((r) => r.reply)?.reply || null;
+  const replyConfirmed = serverConfirms(reply, htmlBefore, textBefore);
+  if (!nonLatin && (jsonConfirmed || replyConfirmed)) {
+    const seen = replyConfirmed
+      ? `the server's own response confirmed it${reply.redirected ? " on " + safePath(reply.finalUrl) : ""}`
       : "the server reported success in JSON";
     return {
       status: "accepted",
@@ -660,7 +678,7 @@ export function classifyOutcome({
       evidence,
       http: last.status,
       redirect: redirectUrl,
-      confirmation: coveredHit ? "message" : "json",
+      confirmation: replyConfirmed ? "server-reply" : "json",
     };
   }
   if (landedHome && (textSuccess || COVERED_SUCCESS_RE.test(visible))) {
@@ -672,12 +690,18 @@ export function classifyOutcome({
       redirect: redirectUrl,
     };
   }
-  // A submission-confirmation phrase that no anchor ties to this submission (a timer-injected or generic line while the
-  // form is still shown and no status region changed). Never accepted.
-  if (coveredHit && !nonLatin && !anchor) {
+  // The page shows a confirmation, but the server's response did not confirm it. DOM text proves nothing about the
+  // server (a page script can write it), so this is never accepted; the report shows what the page displayed.
+  if (coveredHit && !nonLatin) {
+    const shown = firstLine(
+      `${coveredSource}
+${liveText}
+${nearText}`,
+      CONFIRM_RE,
+    );
     return {
       status: "unconfirmed",
-      detail: `unconfirmed: the page shows a confirmation-style line ("${firstLine(coveredSource, CONFIRM_RE)}") but nothing ties it to this submission: the form is still on the page, no status or alert message changed, and the address is not a thank-you page. Check manually or use --imap.`,
+      detail: `unconfirmed — the page showed "${shown}", but the server response did not confirm it. Check manually or use --imap.`,
       evidence,
       http: last.status,
       redirect: redirectUrl,
@@ -695,7 +719,7 @@ export function classifyOutcome({
   }
   return {
     status: "unconfirmed",
-    detail: `The server accepted the request (HTTP ${last.status}) but there is no positive evidence of delivery: no thank-you message and no thank-you page${formGone ? " (the form disappeared, but no submission-confirmation phrase was shown)" : ""}.`,
+    detail: `The server accepted the request (HTTP ${last.status}) but there is no positive evidence of delivery: no thank-you message and no thank-you page in the server's own response${formGone ? " (the form disappeared on the page, which is not evidence)" : ""}.`,
     evidence,
     http: last.status,
     redirect: redirectUrl,
@@ -1027,6 +1051,7 @@ async function doOneForm(
   const blockedNavs = []; // navigations (foreign or forbidden) stopped AFTER the click: what the page tried to do next
   const ours = new Set(); // requests WE aborted: not network errors of the site under test
   const hopStatus = new Map(); // request -> status the server really answered before we stopped the follow-up
+  const replies = new Map(); // non-safe request -> the server's FINAL answer (after our own redirect hops), read at the network layer
   const abortOurs = (route, req, status) => {
     ours.add(req);
     if (status !== undefined) hopStatus.set(req, status);
@@ -1177,6 +1202,16 @@ async function doOneForm(
         chainFinal.push(current);
         if (hop === 7) return route.abort("blockedbyclient"); // redirect loop
       }
+      // v1.2.6: keep the server's own answer (body + final address) for the classifier. Never the DOM.
+      if (!safeMethod) {
+        const text = await resp.text().catch(() => "");
+        replies.set(req, {
+          status: resp.status(),
+          body: String(text).slice(0, 200000),
+          finalUrl: current,
+          redirected: current !== req.url(),
+        });
+      }
       return route.fulfill({ response: resp });
     }
     return route.continue();
@@ -1239,6 +1274,7 @@ async function doOneForm(
     if (!rec) return;
     rec.status = r.status();
     rec.contentType = r.headers()["content-type"] || "";
+    rec.reply = replies.get(r.request()) || null;
     // A JSON answer to a real request is parsed by the classifier; read its body now, before the page goes away.
     if (
       !["GET", "HEAD", "OPTIONS"].includes(rec.method) &&
@@ -1392,6 +1428,9 @@ async function doOneForm(
     const textBefore = await frame.evaluate(() =>
       document.body.innerText.slice(0, 8000),
     );
+    const htmlBefore = await frame.evaluate(() =>
+      document.documentElement.outerHTML.slice(0, 400000),
+    );
     const startUrl = frame.url();
     record.submittedAt = new Date().toISOString();
     const t1 = Date.now();
@@ -1517,6 +1556,7 @@ async function doOneForm(
       finalUrl,
       textBefore,
       textAfter,
+      htmlBefore,
       formGone,
       liveText,
       nearText,

@@ -255,13 +255,30 @@ test("outcome: HTTP error means the lead was lost", () => {
   assert.equal(o.status, "failed");
   assert.equal(o.http, 404);
 });
+// v1.2.6: "accepted" needs the SERVER's own answer (network layer, never the DOM). served() is that answer: the POST body.
+const served = (
+  text,
+  { finalUrl = "https://acme.test/contact", redirected = false } = {},
+) => ({
+  body: `<p>${text}</p>`,
+  finalUrl,
+  redirected,
+});
 test("outcome: redirect to a thank-you page is accepted", () => {
   const o = classifyOutcome({
     ...base,
     finalUrl: "https://acme.test/thanks.html",
     textAfter: "Thank you. We received your message",
     relevant: [
-      { method: "POST", url: "https://acme.test/api/lead", status: 303 },
+      {
+        method: "POST",
+        url: "https://acme.test/api/lead",
+        status: 303,
+        reply: served("Thank you. We received your message", {
+          finalUrl: "https://acme.test/thanks.html",
+          redirected: true,
+        }),
+      },
       { method: "GET", url: "https://acme.test/thanks.html", status: 200 },
     ],
   });
@@ -280,7 +297,14 @@ test("outcome: inline success message is accepted; error text is an error", () =
     classifyOutcome({
       ...base,
       textAfter: "Contact us\nMessage sent, thanks!",
-      relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
+      relevant: [
+        {
+          method: "POST",
+          url: "https://acme.test/s",
+          status: 200,
+          reply: served("Message sent, thanks!"),
+        },
+      ],
       formGone: true,
     }).status,
     "accepted",
@@ -343,13 +367,19 @@ test("outcome: success text that was already on the page does not count", () => 
 });
 
 // Outcome levels: "accepted" = positive evidence AND no negative cue. "delivered" is never produced here (IMAP only).
-const POST200 = [{ method: "POST", url: "https://acme.test/s", status: 200 }];
 // formGone: true by default (the form is gone after submit = anchor). Anchor-less cases pass formGone: false.
 const outcomeOf = (textAfter, extra = {}) =>
   classifyOutcome({
     ...base,
     textAfter,
-    relevant: POST200,
+    relevant: [
+      {
+        method: "POST",
+        url: "https://acme.test/s",
+        status: 200,
+        reply: served(textAfter),
+      },
+    ],
     formGone: true,
     ...extra,
   });
@@ -496,6 +526,7 @@ test("outcome: a non-JSON body is read as text even when the header says JSON", 
         status: 200,
         contentType: "application/json",
         body: "<html>",
+        reply: served("Thank you! Your message has been sent."),
       },
     ],
   });
@@ -524,7 +555,15 @@ test("outcome: 302 to the SAME host followed by a thank-you page is accepted", (
     finalUrl: "https://acme.test/thank-you",
     textAfter: "Thanks, we have your message.",
     relevant: [
-      { method: "POST", url: "https://acme.test/s", status: 302 },
+      {
+        method: "POST",
+        url: "https://acme.test/s",
+        status: 302,
+        reply: served("Thanks, we have your message.", {
+          finalUrl: "https://acme.test/thank-you",
+          redirected: true,
+        }),
+      },
       { method: "GET", url: "https://acme.test/thank-you", status: 200 },
     ],
   });

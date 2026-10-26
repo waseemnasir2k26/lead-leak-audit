@@ -9,14 +9,26 @@ const base = {
   finalUrl: "https://acme.test/contact",
   textBefore: "Contact us",
 };
-// extra.formGone = true: the submitted form is gone or hidden after submit (an anchor). Without an anchor a
-// confirmation phrase is unconfirmed (see confirm-allowlist.test.js).
+// v1.2.6: the server's own answer must carry the phrase (served = the POST body, or the final body after a redirect).
+// formGone is display only, never evidence. DOM-only text is unconfirmed (see server-evidence.test.js).
+const served = (text, finalUrl) => ({
+  body: `<p>${text}</p>`,
+  finalUrl,
+  redirected: finalUrl !== base.finalUrl,
+});
 const run = (textAfter, finalUrl = base.finalUrl, extra = {}) =>
   classifyOutcome({
     ...base,
     finalUrl,
     textAfter: `Contact us\n${textAfter}`,
-    relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
+    relevant: [
+      {
+        method: "POST",
+        url: "https://acme.test/s",
+        status: 200,
+        reply: served(textAfter, finalUrl),
+      },
+    ],
     ...extra,
   });
 const LANG = /^unconfirmed: confirmation not in a language this tool checks\./;

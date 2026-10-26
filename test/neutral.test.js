@@ -305,7 +305,7 @@ test('outcome: "Thanks for your message, but it could not be sent. Please try ag
 test('outcome: "Thank you! Your message has been sent." is accepted', async () => {
   const { sub } = await run(21, "/post/ok-sent");
   assert.equal(sub.status, "accepted", JSON.stringify(sub));
-  assert.equal(sub.confirmation, "message");
+  assert.equal(sub.confirmation, "server-reply");
 });
 
 test('outcome: "Error: please try again" is error-message', async () => {

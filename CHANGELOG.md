@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.6 - 2026-10-26
+
+Closes three false "accepted" results from the R8 judge review. The page can write its own text, so the page is no longer evidence. Upgrade if you act on submission results.
+
+- **"accepted" needs the server's own answer.** The DOM never proves a lead arrived. The tool keeps the response to the lead request (POST body, or the final body after its redirect chain) at the network layer and classifies that. A phrase counts only if it is a submission confirmation, is not already in the pre-submit page, and is not an error. No redirect: the POST answer carries it. Redirect: the final page carries it AND the final address is a thank-you address. JSON with `ok: true`, `success: true` or `status` `ok`/`success` stays accepted.
+- **Removed as evidence:** form gone or hidden, status / alert / aria-live text, and the thank-you address alone. They remain display information only.
+- **What the report shows.** A page that displays a confirmation the server did not confirm is reported as `unconfirmed — the page showed "…", but the server response did not confirm it`. The three judge repros now read that way: a 302 to a blog article with "Your message has been sent to our editors", a 302 to a blog page with "We received your request to subscribe", and a page script that writes "Thanks! Your message has been sent." over a blank 200.
+- **Tests.** `test/server-evidence.test.js` (the three repros; POST 200 HTML answer accepted; fetch JSON `ok:true` accepted; 302 to `/thank-you` with the phrase in its body accepted; fetch HTML answer accepted; pre-submit HTML and error cues excluded). Updated to serve the phrase as the server answer, or to expect unconfirmed for DOM-only text: `test/confirm-allowlist.test.js` (the two status-region / form-hidden tests now serve the phrase in the POST answer; "form hidden at a non-thank-you address" is unconfirmed; a phrase in the page only is unconfirmed), `test/confirm-language.test.js` (the `run` helper serves the text as the server answer), `test/submit.test.js` (the outcome helpers serve the text as the POST answer), `test/neutral.test.js` (confirmation label is now `server-reply`).
+
 ## 1.2.5 - 2026-10-26
 
 Closes two false "accepted" results found in the R7 judge review. Upgrade if you act on submission results.

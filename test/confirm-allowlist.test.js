@@ -1,6 +1,6 @@
-// v1.2.5 allow-list: "accepted" needs a SUBMISSION-CONFIRMATION phrase (not a bare thank-you) AND an anchor that ties it
-// to this submission: the form is gone/hidden, the phrase sits in a status/alert region, the URL is a thank-you address,
-// or JSON says ok:true. No anchor = unconfirmed.
+// v1.2.5 allow-list: "accepted" needs a SUBMISSION-CONFIRMATION phrase (not a bare thank-you). v1.2.6: the phrase must come
+// from the SERVER's answer (POST body, or the final body after a redirect to a thank-you address), or JSON says ok:true.
+// DOM text (form gone, status region, timer-injected text) is never evidence: unconfirmed.
 import test, { before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -96,7 +96,7 @@ test("blocker 2 (stronger): a timer-injected 'Thanks, we received your message' 
 
 // --- Anchors ---
 
-test("status anchor: 'Thanks, we received your message' in a role=status div (form still on the page) is accepted", async () => {
+test("server answer: 'Thanks, we received your message' in a role=status div (form still on the page) is accepted", async () => {
   post = {
     html: `${FORM}<div role="status">Thanks, we received your message</div>`,
   };
@@ -104,7 +104,7 @@ test("status anchor: 'Thanks, we received your message' in a role=status div (fo
   assert.equal(s.status, "accepted", s.detail);
 });
 
-test("form-hidden anchor: 'Thanks, we received your message' in a role=status div after the form is hidden is accepted", async () => {
+test("server answer: 'Thanks, we received your message' in a role=status div after the form is hidden is accepted", async () => {
   post = {
     html: `${HIDDEN_FORM}<div role="status">Thanks, we received your message</div>`,
   };
@@ -127,12 +127,13 @@ test("no exact thank-you address: 302 to /blog/thank-you-to-our-sponsors with 'Y
   assert.equal(s.status, "unconfirmed", s.detail);
 });
 
-test("no exact thank-you address: the same page with the form hidden counts as form-hidden and is accepted", async () => {
+test("no exact thank-you address: the same page with the form hidden is still unconfirmed (a hidden form is not evidence)", async () => {
   pages["/blog/thank-you-to-our-sponsors"] =
     `<h2>Contact us</h2>${HIDDEN_FORM}<p>Your message has been sent.</p>`;
   post = { location: "/blog/thank-you-to-our-sponsors" };
   const s = await submit();
-  assert.equal(s.status, "accepted", s.detail);
+  assert.equal(s.status, "unconfirmed", s.detail);
+  assert.match(s.detail, /the page showed "Your message has been sent\./);
 });
 
 // --- Pure allow-list: what is and is not a submission-confirmation phrase ---
@@ -142,12 +143,24 @@ const base = {
   finalUrl: "https://acme.test/contact",
   textBefore: "Contact us",
 };
+// The server's answer repeats the phrase (v1.2.6: DOM text alone never counts), so only the phrase is under test.
 const shown = (textAfter, extra = {}) =>
   classifyOutcome({
     ...base,
     textAfter: `Contact us\n${textAfter}`,
-    relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
-    formGone: true, // anchor present: only the phrase is under test
+    relevant: [
+      {
+        method: "POST",
+        url: "https://acme.test/s",
+        status: 200,
+        reply: {
+          body: `<p>${textAfter}</p>`,
+          finalUrl: base.finalUrl,
+          redirected: false,
+        },
+      },
+    ],
+    formGone: true, // display only
     ...extra,
   }).status;
 
@@ -178,11 +191,16 @@ test("we'll be in touch is a promised reply, and counts as a confirmation phrase
   assert.equal(shown("We will get back to you."), "accepted");
 });
 
-test("a confirmation phrase with no anchor is unconfirmed; JSON ok:true is an anchor", () => {
-  assert.equal(
-    shown("Your message has been sent.", { formGone: false }),
-    "unconfirmed",
-  );
+test("a confirmation phrase in the page only (no server answer) is unconfirmed, form hidden or not; JSON ok:true is server evidence", () => {
+  const dom = (formGone) =>
+    classifyOutcome({
+      ...base,
+      textAfter: "Contact us\nYour message has been sent.",
+      relevant: [{ method: "POST", url: "https://acme.test/s", status: 200 }],
+      formGone,
+    }).status;
+  assert.equal(dom(false), "unconfirmed");
+  assert.equal(dom(true), "unconfirmed");
   const json = classifyOutcome({
     ...base,
     textAfter: '{"ok":true}',
@@ -206,7 +224,16 @@ test("a success flag in the query is an anchor only after a navigation", () => {
       finalUrl,
       textAfter: "Contact us\nYour message has been sent.",
       relevant: [
-        { method: "POST", url: "https://acme.test/s", status: 302 },
+        {
+          method: "POST",
+          url: "https://acme.test/s",
+          status: 302,
+          reply: {
+            body: "<p>Your message has been sent.</p>",
+            finalUrl,
+            redirected: true,
+          },
+        },
         { method: "GET", url: finalUrl, status: 200 },
       ],
       formGone: false,
