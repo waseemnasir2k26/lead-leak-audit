@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.2 - 2026-10-26
+
+Closes two ways a lead could be counted wrongly or sent twice. Upgrade if you act on submission results.
+
+- **A 307 or 308 never re-sends the lead.** A 307/308 keeps the POST method, so following it submitted the lead a second time. The tool now aborts that re-send and reports "unconfirmed: the site answered with a 307/308 re-send redirect to <path>; the second submission was blocked to keep one lead per form". 301, 302 and 303 are still followed with a GET. Test: `test/resend-redirect.test.js` (the server receives exactly one POST).
+- **Confirmation text in a language the tool cannot check is never "accepted".** Substantial non-Latin text (six or more letters: Japanese, Urdu script, Arabic, Cyrillic and others), or Latin text outside English, Spanish, French, German and Portuguese, is "unconfirmed: confirmation text is in a language this tool can't check (<language>); check manually or use --imap". Roman Urdu failure words (nahi hua, nahin bheja, masla, ghalti, dobara koshish) are error cues. Test: `test/confirm-language.test.js`.
+- **Button text uses the same normaliser as the page scope.** Latin-script look-alikes such as U+0251 (ɑ) are folded to a before classification, so a donation button spelled with them is rejected. Test: `test/homoglyph.test.js`.
+
 ## 1.2.1 - 2026-10-26
 
 Closes two ways a lead could be misread: a look-alike donation button submitted as a contact form, and a redirect counted as a confirmation. Upgrade if you act on submission results or rely on the form classifier.

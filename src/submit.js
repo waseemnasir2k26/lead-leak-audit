@@ -271,6 +271,12 @@ const NEG_WORDS = [
   "falhou",
   "erro",
   "não",
+  // ur (Roman)
+  "nahi hua",
+  "nahin bheja",
+  "masla",
+  "ghalti",
+  "dobara koshish",
 ];
 export const ERROR_RE = new RegExp(
   `n['’]t(?!\\p{L})|(?<!\\p{L})(?:${NEG_WORDS.join("|")})(?!\\p{L})`,
@@ -340,6 +346,78 @@ function jsonVerdict(body) {
 
 const asNav = (e) => (typeof e === "string" ? { path: e, nav: false } : e);
 
+// Language gate. The negative lexicon covers English, Spanish, French, German, Portuguese and a few Roman Urdu
+// failure words. Confirmation text in any other language cannot be checked, so it is never reported "accepted".
+const COVERED_LATIN_WORDS = new Set(
+  (
+    // en
+    "the a an and or to of in is are was were be been your you we our us it this that for with on at by from has have will " +
+    "thank thanks message sent received submitted form contact get back soon shortly successfully i my me can not no yes " +
+    "please hello hi page home error failed unable problem try again went wrong something could cannot t s ll re ve d m " +
+    // es
+    "el la los las de del que y en gracias mensaje enviado recibido un una por para con su sus nos ha sido es se lo al o hemos hola " +
+    // fr
+    "le les des et merci envoyé reçu une pour nous vous est votre à au du avec dans sur " +
+    // de
+    "der die das und ist nicht danke nachricht gesendet wir sie ihre ihr ein eine mit für vielen zu im " +
+    // pt
+    "os as do da dos das obrigado obrigada mensagem enviada recebida e em para com seu sua foi não nao é ao"
+  )
+    .split(" ")
+    .filter(Boolean),
+);
+// Words naming a Latin-script language this tool does not cover (Roman Urdu/Hindi, Indonesian, Italian, Dutch, Polish, Turkish).
+const FOREIGN_LATIN_WORDS = new Set(
+  (
+    "shukriya shukria aap apka apki apke hai hain nahi nahin hua bheja gaya masla ghalti dobara koshish mein hum humein " +
+    "bohat bahut lekin abhi bhej diya terima kasih anda sudah berhasil gagal pesan grazie messaggio inviato inviata " +
+    "bedankt verzonden dziękujemy wiadomość wysłano teşekkürler mesajınız gönderildi"
+  ).split(" "),
+);
+const LATIN_SCRIPT = /\p{Script=Latin}/u;
+const NON_LATIN_NAMES = [
+  [/\p{Script=Hiragana}|\p{Script=Katakana}/u, "Japanese"],
+  [/\p{Script=Han}/u, "Han characters (Chinese or Japanese)"],
+  [/\p{Script=Hangul}/u, "Korean"],
+  [/\p{Script=Arabic}/u, "Arabic script (Arabic, Urdu or Persian)"],
+  [/\p{Script=Cyrillic}/u, "Cyrillic"],
+  [/\p{Script=Greek}/u, "Greek"],
+  [/\p{Script=Devanagari}/u, "Devanagari (Hindi)"],
+  [/\p{Script=Hebrew}/u, "Hebrew"],
+  [/\p{Script=Thai}/u, "Thai"],
+];
+
+/**
+ * Language the tool cannot check in visible confirmation text, or null. Six or more letters of non-Latin script is
+ * substantial. Latin text is also checked (checkLatin): a marker word of an uncovered language, or three or more
+ * words with none from the covered languages, is uncheckable.
+ */
+export function uncheckableLanguage(text, { checkLatin = true } = {}) {
+  const s = String(text ?? "").normalize("NFKC");
+  const counts = new Map();
+  for (const ch of s) {
+    if (!/[\p{L}\p{M}]/u.test(ch) || LATIN_SCRIPT.test(ch)) continue;
+    const hit = NON_LATIN_NAMES.find(([re]) => re.test(ch));
+    const name = hit ? hit[1] : "non-Latin script";
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  if (total >= 6) {
+    // Japanese mixes kana and kanji: report it as Japanese.
+    if (counts.has("Japanese")) return "Japanese";
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
+  if (!checkLatin) return null;
+  const words = (s.toLowerCase().match(/\p{L}+/gu) || []).filter((w) =>
+    /^[a-z\u00c0-\u024f]+$/u.test(w),
+  );
+  if (words.some((w) => FOREIGN_LATIN_WORDS.has(w)))
+    return "a Latin-script language this tool does not cover";
+  if (words.length >= 3 && !words.some((w) => COVERED_LATIN_WORDS.has(w)))
+    return "a Latin-script language this tool does not cover";
+  return null;
+}
+
 /**
  * Pure verdict for one submission attempt. Without IMAP the best outcome is "accepted": positive evidence (a success
  * message, a thank-you URL, or JSON ok:true/success:true) AND no negative cue (ERROR_RE) in the visible text or JSON.
@@ -386,7 +464,9 @@ export function classifyOutcome({
       const detail =
         r.kind === "foreign"
           ? `unconfirmed: the site redirected to ${r.host}, which the safety rail blocked (HTTP ${status}). The server answered, but whether the lead was accepted is not shown. Check that host's thank-you page manually.`
-          : `unconfirmed: the site redirected to ${r.path}, which the safety rail blocked (HTTP ${status}). The server answered, but whether the lead was accepted is not shown. Check manually.`;
+          : r.kind === "resend"
+            ? `unconfirmed: the site answered with a 307/308 re-send redirect to ${r.path}; the second submission was blocked to keep one lead per form. The server answered HTTP ${status}, and whether the lead was accepted is not shown. Check manually.`
+            : `unconfirmed: the site redirected to ${r.path}, which the safety rail blocked (HTTP ${status}). The server answered, but whether the lead was accepted is not shown. Check manually.`;
       return {
         status: "unconfirmed",
         detail,
@@ -523,6 +603,19 @@ export function classifyOutcome({
       detail: positive
         ? `The form answered HTTP ${last.status} and the page shows a success-style word together with an error cue ("${firstLine(visible, ERROR_RE)}"). Delivery is unverified and is not reported as accepted; re-test the form by hand.`
         : `The form answered HTTP ${last.status} but the page shows an error cue ("${firstLine(visible, ERROR_RE)}") and no success wording.`,
+      evidence,
+      http: last.status,
+      redirect: redirectUrl,
+    };
+  }
+  // Text in a language the tool cannot check is never "accepted", whatever success word it contains.
+  const lang = uncheckableLanguage(json ? json.values : scope, {
+    checkLatin: !json,
+  });
+  if (lang) {
+    return {
+      status: "unconfirmed",
+      detail: `unconfirmed: confirmation text is in a language this tool can't check (${lang}); check manually or use --imap. The server answered HTTP ${last.status}; whether the lead was accepted is not shown.`,
       evidence,
       http: last.status,
       redirect: redirectUrl,
@@ -977,8 +1070,19 @@ async function doOneForm(
           });
           return abortOurs(route, req, firstStatus);
         }
-        // 301/302/303 turn a POST into a GET; 307/308 keep the method and the body.
+        // 307/308 keep the method and the body: following one for the lead POST would submit the lead twice.
+        // A non-safe request is never re-sent: the hop is aborted and reported.
         const keep = status === 307 || status === 308;
+        if (keep && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+          blockedRedirects.push({
+            host: target.host,
+            kind: "resend",
+            path: target.pathname,
+            status: firstStatus,
+          });
+          return abortOurs(route, req, firstStatus);
+        }
+        // 301/302/303 turn a POST into a GET; 307/308 keep the method and the body (safe methods only reach here).
         const nextMethod = keep ? method : method === "HEAD" ? "HEAD" : "GET";
         const headers = { ...req.headers() };
         if (!keep || !body)

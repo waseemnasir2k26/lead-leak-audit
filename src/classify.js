@@ -216,6 +216,10 @@ const CONFUSABLES = new Map(
     [0x051b, "q"],
     [0x051d, "w"],
     [0x0261, "g"],
+    [0x0251, "a"], // ɑ (Latin alpha, IPA): Latin script, so the mixed-script check cannot see it
+    [0x0131, "i"], // ı (dotless i)
+    [0x0269, "i"], // ɩ
+    [0x0275, "o"], // ɵ
     [0x03b1, "a"],
     [0x03b5, "e"],
     [0x03b9, "i"],

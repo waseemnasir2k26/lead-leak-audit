@@ -102,3 +102,13 @@ test("normaliseText: NFKC, format characters, case, confusables and whitespace",
   assert.equal(normaliseText("D\u043Enate"), "donate");
   assert.equal(normaliseText("\u0395\u03bd\u03c4\u03c1\u03c5"), "evtpu");
 });
+
+test("Latin-script look-alike (U+0251 alpha) in a donation button is folded and rejected; same in the page title", () => {
+  const button = assessForm(contact({ submitTexts: ["Don\u0251te now"] }));
+  assert.equal(button.verdict, "reject");
+  assert.equal(button.kind, "donation");
+  const page = assessForm(contact({ pageTitle: "Don\u0251te" }));
+  assert.equal(page.verdict, "reject");
+  assert.equal(page.kind, "donation");
+  assert.equal(normaliseText("\u0251\u0131"), "ai");
+});
